@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employer Dashboard - JobMatch</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-50">
+    <!-- Top Navigation -->
+    <nav class="bg-white shadow-lg fixed top-0 w-full z-50">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <h1 class="text-2xl font-bold text-indigo-600">JobMatch</h1>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <button id="notificationBtn" class="p-2 rounded-full hover:bg-gray-100 relative">
+                            <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                            </svg>
+                            <span id="notificationCount" class="notification-badge hidden">0</span>
+                        </button>
+                    </div>
+                    <select id="languageSelector" class="px-3 py-1 border rounded-lg text-sm">
+                        <option value="en">English</option>
+                        <option value="ms">Bahasa</option>
+                        <option value="zh">中文</option>
+                    </select>
+                    <select id="currencySelector" class="px-3 py-1 border rounded-lg text-sm">
+                        <option value="MYR">RM</option>
+                        <option value="USD">USD</option>
+                        <option value="SGD">SGD</option>
+                    </select>
+                    <button onclick="logout()" class="text-red-600 hover:text-red-700">Logout</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Bottom Navigation (Mobile) -->
+    <div class="fixed bottom-0 w-full bg-white border-t md:hidden z-40">
+        <div class="flex justify-around">
+            <button onclick="showTab('jobs')" class="flex-1 py-3 text-center tab-btn tab-active" data-tab="jobs">
+                <svg class="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+                <span class="text-xs">Jobs</span>
+            </button>
+            <button onclick="showTab('applications')" class="flex-1 py-3 text-center tab-btn" data-tab="applications">
+                <svg class="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span class="text-xs">Applications</span>
+            </button>
+            <button onclick="showTab('contracts')" class="flex-1 py-3 text-center tab-btn" data-tab="contracts">
+                <svg class="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                </svg>
+                <span class="text-xs">Contracts</span>
+            </button>
+            <button onclick="showTab('subscription')" class="flex-1 py-3 text-center tab-btn" data-tab="subscription">
+                <svg class="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="text-xs">Premium</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="pt-16 pb-20 md:pb-4">
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <!-- Jobs Tab -->
+            <div id="jobsTab" class="tab-content">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold">My Job Posts</h2>
+                    <button onclick="showPostJobModal()" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+                        Post New Job
+                    </button>
+                </div>
+                <div id="myJobsList" class="space-y-4"></div>
+            </div>
+
+            <!-- Applications Tab -->
+            <div id="applicationsTab" class="tab-content hidden">
+                <h2 class="text-2xl font-bold mb-6">Applications & Bids</h2>
+                <div class="space-y-6">
+                    <div>
+                        <h3 class="text-xl font-bold mb-4">Applications</h3>
+                        <div id="applicationsList" class="space-y-4"></div>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold mb-4">Bids</h3>
+                        <div id="bidsList" class="space-y-4"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contracts Tab -->
+            <div id="contractsTab" class="tab-content hidden">
+                <h2 class="text-2xl font-bold mb-6">Active Contracts</h2>
+                <div id="contractsList" class="space-y-4"></div>
+            </div>
+
+            <!-- Subscription Tab -->
+            <div id="subscriptionTab" class="tab-content hidden">
+                <h2 class="text-2xl font-bold mb-6">Premium Plans</h2>
+                
+                <!-- Current Plan -->
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h3 class="text-xl font-bold mb-2">Current Plan</h3>
+                    <p class="text-3xl font-bold text-indigo-600 capitalize" id="currentPlan">Free</p>
+                </div>
+
+                <!-- Subscription Plans -->
+                <div class="grid md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-lg p-6 border-2 border-gray-200">
+                        <h3 class="text-xl font-bold mb-2">Free</h3>
+                        <p class="text-3xl font-bold mb-4"><span data-price="0">RM 0</span>/month</p>
+                        <ul class="space-y-2 mb-6 text-sm">
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Post up to 3 jobs</li>
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Basic support</li>
+                        </ul>
+                        <button class="w-full bg-gray-200 text-gray-800 py-2 rounded-lg" disabled>Current Plan</button>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg p-6 border-2 border-indigo-600 relative">
+                        <span class="absolute top-0 right-0 bg-indigo-600 text-white text-xs px-3 py-1 rounded-bl-lg rounded-tr-lg">Popular</span>
+                        <h3 class="text-xl font-bold mb-2">Pro</h3>
+                        <p class="text-3xl font-bold mb-4"><span data-price="99">RM 99</span>/month</p>
+                        <ul class="space-y-2 mb-6 text-sm">
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Unlimited job posts</li>
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Priority support</li>
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Advanced analytics</li>
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Featured job posts</li>
+                        </ul>
+                        <button onclick="subscribe('pro')" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Upgrade to Pro</button>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg p-6 border-2 border-gray-200">
+                        <h3 class="text-xl font-bold mb-2">Enterprise</h3>
+                        <p class="text-3xl font-bold mb-4"><span data-price="299">RM 299</span>/month</p>
+                        <ul class="space-y-2 mb-6 text-sm">
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Everything in Pro</li>
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Dedicated account manager</li>
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>API access</li>
+                            <li class="flex items-center"><svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Custom branding</li>
+                        </ul>
+                        <button onclick="subscribe('enterprise')" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Upgrade to Enterprise</button>
+                    </div>
+                </div>
+
+                <!-- Advertisement Section -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-xl font-bold mb-4">Advertise with Us</h3>
+                    <p class="text-gray-600 mb-4">Reach thousands of job seekers with targeted advertising</p>
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="border rounded-lg p-4">
+                            <h4 class="font-bold mb-2">Banner Ads</h4>
+                            <p class="text-2xl font-bold text-indigo-600 mb-3"><span data-price="199">RM 199</span>/month</p>
+                            <p class="text-sm text-gray-600 mb-3">Display your brand across the platform</p>
+                            <button onclick="contactAdvertising()" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Get Started</button>
+                        </div>
+                        <div class="border rounded-lg p-4">
+                            <h4 class="font-bold mb-2">Featured Listings</h4>
+                            <p class="text-2xl font-bold text-indigo-600 mb-3"><span data-price="99">RM 99</span>/listing</p>
+                            <p class="text-sm text-gray-600 mb-3">Boost your job posts visibility</p>
+                            <button onclick="contactAdvertising()" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Get Started</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Post Job Modal -->
+    <div id="postJobModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 max-h-screen overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-2xl font-bold">Post a Job</h3>
+                <button onclick="closePostJobModal()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <form id="postJobForm" onsubmit="handlePostJob(event)">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Job Title</label>
+                        <input type="text" id="jobTitle" class="w-full px-4 py-2 border rounded-lg" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Company Name</label>
+                        <input type="text" id="jobCompany" class="w-full px-4 py-2 border rounded-lg" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Job Type</label>
+                        <select id="jobType" class="w-full px-4 py-2 border rounded-lg" required>
+                            <option value="full-time">Full Time</option>
+                            <option value="part-time">Part Time</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Salary (RM)</label>
+                        <input type="number" id="jobSalary" class="w-full px-4 py-2 border rounded-lg" required>
+                        <p class="text-xs text-gray-500 mt-1">Per hour for part-time, per month for full-time</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Location</label>
+                        <input type="text" id="jobLocation" class="w-full px-4 py-2 border rounded-lg" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Description</label>
+                        <textarea id="jobDescription" rows="4" class="w-full px-4 py-2 border rounded-lg" required></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Required Skills (comma-separated)</label>
+                        <input type="text" id="jobSkills" class="w-full px-4 py-2 border rounded-lg" placeholder="e.g. customer-service, sales">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Working Days (comma-separated)</label>
+                        <input type="text" id="jobDays" class="w-full px-4 py-2 border rounded-lg" placeholder="e.g. monday, tuesday, wednesday" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Working Hours</label>
+                        <input type="text" id="jobTimes" class="w-full px-4 py-2 border rounded-lg" placeholder="e.g. 09:00-17:00" required>
+                    </div>
+                </div>
+                <button type="submit" class="w-full mt-6 bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700">
+                    Post Job
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Review Modal -->
+    <div id="reviewModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 class="text-2xl font-bold mb-4">Leave a Review</h3>
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Rating</label>
+                <div class="flex gap-2">
+                    <button type="button" onclick="setRating(1)" class="star-btn text-3xl">★</button>
+                    <button type="button" onclick="setRating(2)" class="star-btn text-3xl">★</button>
+                    <button type="button" onclick="setRating(3)" class="star-btn text-3xl">★</button>
+                    <button type="button" onclick="setRating(4)" class="star-btn text-3xl">★</button>
+                    <button type="button" onclick="setRating(5)" class="star-btn text-3xl">★</button>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Review</label>
+                <textarea id="reviewText" rows="4" class="w-full px-4 py-2 border rounded-lg"></textarea>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closeReviewModal()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button onclick="submitReview()" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="translations.js"></script>
+    <script src="employer.js"></script>
+</body>
+</html>

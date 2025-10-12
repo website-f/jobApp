@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobMatch - Find Your Perfect Job</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg fixed top-0 w-full z-50">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-indigo-600">JobMatch</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <select id="languageSelector" class="px-3 py-1 border rounded-lg text-sm">
+                        <option value="en">English</option>
+                        <option value="ms">Bahasa Melayu</option>
+                        <option value="zh">中文</option>
+                    </select>
+                    <select id="currencySelector" class="px-3 py-1 border rounded-lg text-sm">
+                        <option value="MYR">RM</option>
+                        <option value="USD">USD</option>
+                        <option value="SGD">SGD</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <div class="pt-16">
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-20">
+            <div class="max-w-7xl mx-auto px-4 text-center">
+                <h2 class="text-4xl md:text-5xl font-bold mb-4" data-translate="hero.title">Find Your Dream Job Today</h2>
+                <p class="text-xl mb-8" data-translate="hero.subtitle">Connect with opportunities near you</p>
+                <div class="flex flex-col sm:flex-row justify-center gap-4">
+                    <button onclick="showRegisterModal('seeker')" class="bg-white text-indigo-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                        <span data-translate="hero.findJob">Find a Job</span>
+                    </button>
+                    <button onclick="showRegisterModal('employer')" class="bg-indigo-500 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-400 transition">
+                        <span data-translate="hero.postJob">Post a Job</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Features Section -->
+        <div class="max-w-7xl mx-auto px-4 py-16">
+            <h3 class="text-3xl font-bold text-center mb-12" data-translate="features.title">Why Choose JobMatch?</h3>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <div class="bg-indigo-100 w-12 h-12 rounded-lg flex items-center justify-center mb-4">
+                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-2" data-translate="features.location.title">Location-Based Matching</h4>
+                    <p class="text-gray-600" data-translate="features.location.desc">Find jobs within your preferred radius</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <div class="bg-green-100 w-12 h-12 rounded-lg flex items-center justify-center mb-4">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-2" data-translate="features.smart.title">Smart Job Matching</h4>
+                    <p class="text-gray-600" data-translate="features.smart.desc">AI-powered matching based on skills and availability</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <div class="bg-purple-100 w-12 h-12 rounded-lg flex items-center justify-center mb-4">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <h4 class="text-xl font-bold mb-2" data-translate="features.flexible.title">Flexible Scheduling</h4>
+                    <p class="text-gray-600" data-translate="features.flexible.desc">Manage your roster and availability easily</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- How It Works -->
+        <div class="bg-white py-16">
+            <div class="max-w-7xl mx-auto px-4">
+                <h3 class="text-3xl font-bold text-center mb-12" data-translate="howItWorks.title">How It Works</h3>
+                <div class="grid md:grid-cols-4 gap-8">
+                    <div class="text-center">
+                        <div class="bg-indigo-600 text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">1</div>
+                        <h4 class="font-bold mb-2" data-translate="howItWorks.step1.title">Create Profile</h4>
+                        <p class="text-gray-600 text-sm" data-translate="howItWorks.step1.desc">Sign up as job seeker or employer</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-indigo-600 text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">2</div>
+                        <h4 class="font-bold mb-2" data-translate="howItWorks.step2.title">Set Preferences</h4>
+                        <p class="text-gray-600 text-sm" data-translate="howItWorks.step2.desc">Add skills, roster, and location</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-indigo-600 text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">3</div>
+                        <h4 class="font-bold mb-2" data-translate="howItWorks.step3.title">Get Matched</h4>
+                        <p class="text-gray-600 text-sm" data-translate="howItWorks.step3.desc">Receive relevant job opportunities</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-indigo-600 text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">4</div>
+                        <h4 class="font-bold mb-2" data-translate="howItWorks.step4.title">Start Working</h4>
+                        <p class="text-gray-600 text-sm" data-translate="howItWorks.step4.desc">Clock in/out and get paid</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CTA Section -->
+        <div class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-16">
+            <div class="max-w-7xl mx-auto px-4 text-center">
+                <h3 class="text-3xl font-bold mb-4" data-translate="cta.title">Ready to Get Started?</h3>
+                <p class="text-xl mb-8" data-translate="cta.subtitle">Join thousands of satisfied users</p>
+                <button onclick="showRegisterModal('seeker')" class="bg-white text-indigo-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                    <span data-translate="cta.button">Sign Up Now</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Registration Modal -->
+    <div id="registerModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-8 max-w-md w-full mx-4 max-h-screen overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold" data-translate="register.title">Create Account</h3>
+                <button onclick="closeRegisterModal()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <form id="registerForm" onsubmit="handleRegister(event)">
+                <input type="hidden" id="userType" name="userType">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2" data-translate="register.name">Full Name</label>
+                    <input type="text" id="fullName" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2" data-translate="register.email">Email</label>
+                    <input type="email" id="email" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2" data-translate="register.phone">Phone Number</label>
+                    <input type="tel" id="phone" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium mb-2" data-translate="register.password">Password</label>
+                    <input type="password" id="password" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition">
+                    <span data-translate="register.submit">Register</span>
+                </button>
+                <p class="text-center mt-4 text-sm text-gray-600">
+                    <span data-translate="register.hasAccount">Already have an account?</span>
+                    <button type="button" onclick="showLoginModal()" class="text-indigo-600 font-semibold" data-translate="register.login">Login</button>
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-8 max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold" data-translate="login.title">Login</h3>
+                <button onclick="closeLoginModal()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2" data-translate="login.email">Email</label>
+                    <input type="email" id="loginEmail" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium mb-2" data-translate="login.password">Password</label>
+                    <input type="password" id="loginPassword" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition">
+                    <span data-translate="login.submit">Login</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="translations.js"></script>
+</body>
+</html>
