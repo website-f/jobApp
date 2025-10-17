@@ -23,36 +23,223 @@
 })();
 
 let currentJobId = null;
+let map = null;
+let userMarker = null;
+let jobMarkers = [];
 
-// Get and update user location
-async function updateLocation() {
+// Geocoding function to convert address to coordinates
+async function geocodeAddress(address) {
     try {
-        const position = await getUserLocation();
-        currentUser.location = position;
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            return {
+                lat: parseFloat(data[0].lat),
+                lng: parseFloat(data[0].lon),
+                displayName: data[0].display_name
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error('Geocoding error:', error);
+        return null;
+    }
+}
+
+// Reverse geocoding function to convert coordinates to address
+async function reverseGeocode(lat, lng) {
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+        const data = await response.json();
+        return data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    } catch (error) {
+        console.error('Reverse geocoding error:', error);
+        return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+}
+
+// Update location from address input
+async function updateLocationFromAddress() {
+    const addressInput = document.getElementById('addressInput');
+    const address = addressInput.value.trim();
+    
+    if (!address) {
+        showToast('Please enter an address', 'warning');
+        return;
+    }
+    
+    showToast('Searching for address...', 'info');
+    
+    const result = await geocodeAddress(address);
+    
+    if (result) {
+        currentUser.location = {
+            lat: result.lat,
+            lng: result.lng,
+            address: result.displayName
+        };
         updateUser();
         
-        document.getElementById('locationText').textContent = 
-            `Your location: ${position.lat.toFixed(4)}, ${position.lng.toFixed(4)}`;
+        document.getElementById('locationText').textContent = `Your location: ${result.displayName}`;
         
-        showToast('Location updated!', 'success');
+        // Update map
+        if (map) {
+            map.setView([result.lat, result.lng], 13);
+            if (userMarker) {
+                userMarker.setLatLng([result.lat, result.lng]);
+            }
+        }
+        
+        showToast('Location updated successfully!', 'success');
         searchJobs();
-    } catch (error) {
-        showToast('Could not get location', 'warning');
+    } else {
+        showToast('Address not found. Please try a different address.', 'error');
     }
+}
+
+// Get user's current location using GPS
+async function getUserLocation() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error('Geolocation not supported'));
+            return;
+        }
+        
+        navigator.geolocation.getCurrentPosition(
+            async position => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const address = await reverseGeocode(lat, lng);
+                resolve({ lat, lng, address });
+            },
+            error => reject(error)
+        );
+    });
 }
 
 // Initialize location on load
 async function initLocation() {
-    const position = await getUserLocation();
-    if (!currentUser.location || !currentUser.location.lat) {
-        currentUser.location = position;
+    try {
+        if (!currentUser.location || !currentUser.location.lat) {
+            const position = await getUserLocation();
+            currentUser.location = position;
+            updateUser();
+        } else if (!currentUser.location.address) {
+            // If we have coordinates but no address, reverse geocode
+            const address = await reverseGeocode(currentUser.location.lat, currentUser.location.lng);
+            currentUser.location.address = address;
+            updateUser();
+        }
+        
+        document.getElementById('addressInput').value = currentUser.location.address || '';
+        document.getElementById('locationText').textContent = 
+            `Your location: ${currentUser.location.address || 'Unknown'}`;
+        
+        initMap();
+    } catch (error) {
+        console.error('Location error:', error);
+        showToast('Could not get location. Please enter manually.', 'warning');
+        // Default to a central location
+        currentUser.location = { lat: 3.1390, lng: 101.6869, address: 'Kuala Lumpur, Malaysia' };
         updateUser();
+        initMap();
     }
-    document.getElementById('locationText').textContent = 
-        `Your location: ${currentUser.location.lat.toFixed(4)}, ${currentUser.location.lng.toFixed(4)}`;
 }
 
-// Update radius slider
+// Initialize the Leaflet map
+function initMap() {
+    if (map) {
+        map.remove();
+    }
+    
+    const userLat = currentUser.location.lat;
+    const userLng = currentUser.location.lng;
+    
+    map = L.map('map').setView([userLat, userLng], 13);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19
+    }).addTo(map);
+    
+    // Add user marker
+    const userIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: `<div style="background-color: #4f46e5; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+    });
+    
+    userMarker = L.marker([userLat, userLng], { icon: userIcon })
+        .addTo(map)
+        .bindPopup('<b>Your Location</b>');
+    
+    // Add radius circle
+    updateRadiusCircle();
+    
+    // Load jobs on map
+    loadJobsOnMap();
+}
+
+let radiusCircle = null;
+
+function updateRadiusCircle() {
+    if (radiusCircle) {
+        map.removeLayer(radiusCircle);
+    }
+    
+    const radius = parseFloat(document.getElementById('radiusSlider').value) * 1000; // Convert to meters
+    
+    radiusCircle = L.circle([currentUser.location.lat, currentUser.location.lng], {
+        color: '#6366f1',
+        fillColor: '#6366f1',
+        fillOpacity: 0.1,
+        radius: radius
+    }).addTo(map);
+}
+
+function loadJobsOnMap() {
+    // Clear existing job markers
+    jobMarkers.forEach(marker => map.removeLayer(marker));
+    jobMarkers = [];
+    
+    const jobs = JSON.parse(window.localStorage.getItem('jobs')) || [];
+    const radius = parseFloat(document.getElementById('radiusSlider').value);
+    
+    jobs.forEach(job => {
+        const distance = calculateDistance(
+            currentUser.location.lat,
+            currentUser.location.lng,
+            job.lat,
+            job.lng
+        );
+        
+        if (distance <= radius) {
+            const jobIcon = L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div style="background-color: #10b981; width: 25px; height: 25px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>`,
+                iconSize: [25, 25],
+                iconAnchor: [12.5, 12.5]
+            });
+            
+            const marker = L.marker([job.lat, job.lng], { icon: jobIcon })
+                .addTo(map)
+                .bindPopup(`
+                    <div style="min-width: 150px;">
+                        <h4 style="margin: 0 0 8px 0; font-weight: bold;">${job.title}</h4>
+                        <p style="margin: 4px 0; font-size: 13px;">${job.company}</p>
+                        <p style="margin: 4px 0; font-size: 12px; color: #666;">${distance.toFixed(1)} km away</p>
+                        <button onclick="showJobDetails(${job.id})" style="margin-top: 8px; background: #6366f1; color: white; padding: 4px 12px; border: none; border-radius: 4px; cursor: pointer; width: 100%;">View Details</button>
+                    </div>
+                `);
+            
+            jobMarkers.push(marker);
+        }
+    });
+}
+
+// Initialize on DOM load
 document.addEventListener('DOMContentLoaded', () => {
     const slider = document.getElementById('radiusSlider');
     const valueDisplay = document.getElementById('radiusValue');
@@ -60,6 +247,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (slider && valueDisplay) {
         slider.addEventListener('input', (e) => {
             valueDisplay.textContent = `${e.target.value} km`;
+            updateRadiusCircle();
+            searchJobs();
+            loadJobsOnMap();
         });
     }
     
@@ -70,6 +260,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadRoster();
     loadContracts();
     loadPortfolio();
+    loadResume();
+    loadProfilePhoto();
 });
 
 // Tab switching
@@ -90,11 +282,11 @@ function searchJobs() {
     const typeFilter = document.getElementById('jobTypeFilter').value;
     const radius = parseFloat(document.getElementById('radiusSlider').value);
     
-    const jobs = JSON.parse(window.localStorage.getItem('jobs'));
+    const jobs = JSON.parse(window.localStorage.getItem('jobs')) || [];
     const userLat = currentUser.location.lat;
     const userLng = currentUser.location.lng;
     const userSkills = currentUser.skills || [];
-    const userRoster = currentUser.roster || {};
+    const userRoster = currentUser.roster || [];
     
     let totalJobs = 0;
     let matchedJobs = 0;
@@ -116,12 +308,12 @@ function searchJobs() {
         const matchesType = !typeFilter || job.type === typeFilter;
         if (!matchesType) return false;
         
-        // Skill matching - user must have at least one required skill
+        // Skill matching
         const hasRequiredSkills = userSkills.length === 0 || 
             job.skills.some(skill => userSkills.includes(skill));
         if (!hasRequiredSkills) return false;
         
-        // Roster matching - check if user is available on required days
+        // Roster matching
         const matchesRoster = checkRosterMatch(job, userRoster);
         if (!matchesRoster) return false;
         
@@ -144,14 +336,31 @@ function searchJobs() {
 
 function checkRosterMatch(job, userRoster) {
     // If user has no roster set, show all jobs
-    if (!userRoster || Object.keys(userRoster).length === 0) return true;
+    if (!userRoster) return true;
     
-    if (job.schedule.type === 'weekly') {
-        // Check if user is available on any of the required days
-        return job.schedule.days.some(day => {
-            const dayKey = day.toLowerCase();
-            return userRoster[dayKey] !== undefined;
-        });
+    // Handle both array (new format) and object (old format) roster structures
+    if (Array.isArray(userRoster)) {
+        // New format with dates
+        if (userRoster.length === 0) return true;
+        
+        if (job.schedule && job.schedule.type === 'weekly' && job.schedule.days) {
+            return job.schedule.days.some(jobDay => {
+                return userRoster.some(rosterEntry => {
+                    const rosterDayName = new Date(rosterEntry.date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+                    return rosterDayName === jobDay.toLowerCase();
+                });
+            });
+        }
+    } else {
+        // Old format with day objects
+        if (Object.keys(userRoster).length === 0) return true;
+        
+        if (job.schedule && job.schedule.type === 'weekly' && job.schedule.days) {
+            return job.schedule.days.some(jobDay => {
+                const dayKey = jobDay.toLowerCase();
+                return userRoster[dayKey] !== undefined;
+            });
+        }
     }
     
     return true;
@@ -216,8 +425,10 @@ function displayJobs(jobs) {
 }
 
 function showJobDetails(jobId) {
-    const jobs = JSON.parse(window.localStorage.getItem('jobs'));
+    const jobs = JSON.parse(window.localStorage.getItem('jobs')) || [];
     const job = jobs.find(j => j.id === jobId);
+    if (!job) return;
+    
     currentJobId = jobId;
     
     const distance = calculateDistance(currentUser.location.lat, currentUser.location.lng, job.lat, job.lng);
@@ -292,7 +503,7 @@ function closeJobModal() {
 }
 
 function applyForJob() {
-    const applications = JSON.parse(window.localStorage.getItem('applications'));
+    const applications = JSON.parse(window.localStorage.getItem('applications')) || [];
     
     const existing = applications.find(app => 
         app.jobId === currentJobId && app.seekerId === currentUser.id
@@ -313,9 +524,11 @@ function applyForJob() {
     
     window.localStorage.setItem('applications', JSON.stringify(applications));
     
-    const jobs = JSON.parse(window.localStorage.getItem('jobs'));
+    const jobs = JSON.parse(window.localStorage.getItem('jobs')) || [];
     const job = jobs.find(j => j.id === currentJobId);
-    addNotification(job.employerId, `${currentUser.name} applied for ${job.title}`, 'info');
+    if (job) {
+        addNotification(job.employerId, `${currentUser.name} applied for ${job.title}`, 'info');
+    }
     
     showToast('Application submitted successfully!', 'success');
     closeJobModal();
@@ -341,7 +554,7 @@ function submitBid() {
         return;
     }
     
-    const bids = JSON.parse(window.localStorage.getItem('bids'));
+    const bids = JSON.parse(window.localStorage.getItem('bids')) || [];
     bids.push({
         id: Date.now(),
         jobId: currentJobId,
@@ -354,9 +567,11 @@ function submitBid() {
     
     window.localStorage.setItem('bids', JSON.stringify(bids));
     
-    const jobs = JSON.parse(window.localStorage.getItem('jobs'));
+    const jobs = JSON.parse(window.localStorage.getItem('jobs')) || [];
     const job = jobs.find(j => j.id === currentJobId);
-    addNotification(job.employerId, `${currentUser.name} placed a bid on ${job.title}`, 'info');
+    if (job) {
+        addNotification(job.employerId, `${currentUser.name} placed a bid on ${job.title}`, 'info');
+    }
     
     showToast('Bid submitted successfully!', 'success');
     closeBidModal();
@@ -364,53 +579,297 @@ function submitBid() {
     document.getElementById('bidMessage').value = '';
 }
 
-// Roster management with time pickers
-function changeRosterType() {
-    const type = document.getElementById('rosterType').value;
-    showToast(`Roster type set to: ${type}`, 'info');
+// Enhanced Roster Management with Dates and Multiple Time Slots
+function addRosterEntry() {
+    const container = document.getElementById('rosterEntries');
+    const entryId = Date.now();
+    
+    const entry = document.createElement('div');
+    entry.className = 'border rounded-lg p-4 mb-4 roster-entry';
+    entry.dataset.id = entryId;
+    entry.innerHTML = `
+        <div class="flex justify-between items-start mb-3">
+            <h4 class="font-semibold">Availability Entry</h4>
+            <button onclick="removeRosterEntry(${entryId})" class="text-red-600 hover:text-red-700 text-sm">Remove</button>
+        </div>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm font-medium mb-1">Date</label>
+                <input type="date" class="roster-date w-full px-3 py-2 border rounded-lg" required>
+            </div>
+            <div class="time-slots">
+                <label class="block text-sm font-medium mb-2">Time Slots</label>
+                <div class="time-slot-list space-y-2"></div>
+                <button onclick="addTimeSlot(${entryId})" class="mt-2 text-indigo-600 text-sm font-medium hover:text-indigo-700">
+                    + Add Time Slot
+                </button>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(entry);
+    
+    // Add first time slot automatically
+    setTimeout(() => addTimeSlot(entryId), 100);
+}
+
+function addTimeSlot(entryId) {
+    const entry = document.querySelector(`[data-id="${entryId}"]`);
+    if (!entry) return;
+    
+    const slotList = entry.querySelector('.time-slot-list');
+    const slotId = Date.now();
+    
+    const slot = document.createElement('div');
+    slot.className = 'flex gap-2 items-center time-slot';
+    slot.dataset.slotId = slotId;
+    slot.innerHTML = `
+        <input type="time" class="slot-start flex-1 px-3 py-2 border rounded-lg text-sm" required>
+        <span class="text-gray-500">to</span>
+        <input type="time" class="slot-end flex-1 px-3 py-2 border rounded-lg text-sm" required>
+        <button onclick="removeTimeSlot(${entryId}, ${slotId})" class="text-red-600 hover:text-red-700 text-sm">×</button>
+    `;
+    
+    slotList.appendChild(slot);
+}
+
+function removeTimeSlot(entryId, slotId) {
+    const entry = document.querySelector(`[data-id="${entryId}"]`);
+    if (!entry) return;
+    
+    const slot = entry.querySelector(`[data-slot-id="${slotId}"]`);
+    if (slot) {
+        slot.remove();
+    }
+}
+
+function removeRosterEntry(entryId) {
+    const entry = document.querySelector(`[data-id="${entryId}"]`);
+    if (entry) {
+        entry.remove();
+    }
 }
 
 function saveRoster() {
-    const days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-    const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    const roster = {};
-    const rosterType = document.getElementById('rosterType').value;
+    const entries = document.querySelectorAll('.roster-entry');
+    const roster = [];
     
-    days.forEach((day, index) => {
-        const checkbox = document.getElementById(day);
-        const startTime = document.getElementById(day + 'Start').value;
-        const endTime = document.getElementById(day + 'End').value;
+    entries.forEach(entry => {
+        const date = entry.querySelector('.roster-date').value;
+        if (!date) return;
         
-        if (checkbox.checked && startTime && endTime) {
-            roster[dayNames[index]] = `${startTime}-${endTime}`;
+        const timeSlots = [];
+        const slots = entry.querySelectorAll('.time-slot');
+        
+        slots.forEach(slot => {
+            const start = slot.querySelector('.slot-start').value;
+            const end = slot.querySelector('.slot-end').value;
+            
+            if (start && end) {
+                timeSlots.push({ start, end });
+            }
+        });
+        
+        if (timeSlots.length > 0) {
+            roster.push({
+                date,
+                timeSlots
+            });
         }
     });
     
+    if (roster.length === 0) {
+        showToast('Please add at least one availability entry', 'warning');
+        return;
+    }
+    
     currentUser.roster = roster;
-    currentUser.rosterType = rosterType;
     updateUser();
     
     showToast('Roster saved successfully!', 'success');
-    searchJobs(); // Refresh job search with new roster
+    searchJobs();
 }
 
 function loadRoster() {
-    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    const dayShort = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const container = document.getElementById('rosterEntries');
+    container.innerHTML = '';
     
-    if (currentUser.rosterType) {
-        document.getElementById('rosterType').value = currentUser.rosterType;
+    if (!currentUser.roster || currentUser.roster.length === 0) {
+        return;
     }
     
-    if (currentUser.roster) {
-        days.forEach((day, index) => {
-            if (currentUser.roster[day]) {
-                const times = currentUser.roster[day].split('-');
-                document.getElementById(dayShort[index]).checked = true;
-                document.getElementById(dayShort[index] + 'Start').value = times[0] || '';
-                document.getElementById(dayShort[index] + 'End').value = times[1] || '';
-            }
-        });
+    currentUser.roster.forEach(rosterEntry => {
+        const entryId = Date.now() + Math.random();
+        
+        const entry = document.createElement('div');
+        entry.className = 'border rounded-lg p-4 mb-4 roster-entry';
+        entry.dataset.id = entryId;
+        entry.innerHTML = `
+            <div class="flex justify-between items-start mb-3">
+                <h4 class="font-semibold">Availability Entry</h4>
+                <button onclick="removeRosterEntry(${entryId})" class="text-red-600 hover:text-red-700 text-sm">Remove</button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Date</label>
+                    <input type="date" class="roster-date w-full px-3 py-2 border rounded-lg" value="${rosterEntry.date}" required>
+                </div>
+                <div class="time-slots">
+                    <label class="block text-sm font-medium mb-2">Time Slots</label>
+                    <div class="time-slot-list space-y-2"></div>
+                    <button onclick="addTimeSlot(${entryId})" class="mt-2 text-indigo-600 text-sm font-medium hover:text-indigo-700">
+                        + Add Time Slot
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(entry);
+        
+        // Add time slots
+        setTimeout(() => {
+            const slotList = entry.querySelector('.time-slot-list');
+            rosterEntry.timeSlots.forEach(timeSlot => {
+                const slotId = Date.now() + Math.random();
+                const slot = document.createElement('div');
+                slot.className = 'flex gap-2 items-center time-slot';
+                slot.dataset.slotId = slotId;
+                slot.innerHTML = `
+                    <input type="time" class="slot-start flex-1 px-3 py-2 border rounded-lg text-sm" value="${timeSlot.start}" required>
+                    <span class="text-gray-500">to</span>
+                    <input type="time" class="slot-end flex-1 px-3 py-2 border rounded-lg text-sm" value="${timeSlot.end}" required>
+                    <button onclick="removeTimeSlot(${entryId}, ${slotId})" class="text-red-600 hover:text-red-700 text-sm">×</button>
+                `;
+                slotList.appendChild(slot);
+            });
+        }, 100);
+    });
+}
+
+// Profile Photo Upload
+function uploadPhoto(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        showToast('Photo size should be less than 5MB', 'error');
+        return;
+    }
+    
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+        showToast('Please upload an image file', 'error');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        currentUser.profilePhoto = e.target.result;
+        updateUser();
+        loadProfilePhoto();
+        showToast('Profile photo updated!', 'success');
+    };
+    reader.readAsDataURL(file);
+}
+
+function loadProfilePhoto() {
+    const photo = document.getElementById('profilePhoto');
+    const placeholder = document.getElementById('profilePhotoPlaceholder');
+    
+    if (currentUser.profilePhoto) {
+        photo.src = currentUser.profilePhoto;
+        photo.style.display = 'block';
+        placeholder.style.display = 'none';
+    } else {
+        photo.style.display = 'none';
+        placeholder.style.display = 'flex';
+    }
+}
+
+// Resume Upload
+function uploadResume(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('Resume size should be less than 10MB', 'error');
+        return;
+    }
+    
+    // Check file type
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!allowedTypes.includes(file.type)) {
+        showToast('Please upload PDF or DOC/DOCX file', 'error');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        currentUser.resume = {
+            name: file.name,
+            type: file.type,
+            data: e.target.result,
+            uploadedAt: new Date().toISOString()
+        };
+        updateUser();
+        loadResume();
+        showToast('Resume uploaded successfully!', 'success');
+    };
+    reader.readAsDataURL(file);
+}
+
+function loadResume() {
+    const container = document.getElementById('resumeSection');
+    
+    if (!currentUser.resume) {
+        container.innerHTML = '<p class="text-gray-500 mb-4">No resume uploaded</p>';
+        return;
+    }
+    
+    const uploadDate = new Date(currentUser.resume.uploadedAt).toLocaleDateString();
+    
+    container.innerHTML = `
+        <div class="border rounded-lg p-4 mb-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <svg class="w-10 h-10 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/>
+                    </svg>
+                    <div>
+                        <p class="font-semibold">${currentUser.resume.name}</p>
+                        <p class="text-xs text-gray-500">Uploaded on ${uploadDate}</p>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="downloadResume()" class="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+                        Download
+                    </button>
+                    <button onclick="deleteResume()" class="text-red-600 hover:text-red-700 text-sm font-medium">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function downloadResume() {
+    if (!currentUser.resume) return;
+    
+    const link = document.createElement('a');
+    link.href = currentUser.resume.data;
+    link.download = currentUser.resume.name;
+    link.click();
+}
+
+function deleteResume() {
+    if (confirm('Are you sure you want to delete your resume?')) {
+        delete currentUser.resume;
+        updateUser();
+        loadResume();
+        showToast('Resume deleted', 'success');
     }
 }
 
@@ -428,18 +887,18 @@ function loadProfile() {
             </div>
             <div>
                 <label class="text-sm text-gray-600">Phone</label>
-                <p class="font-semibold">${currentUser.phone}</p>
+                <p class="font-semibold">${currentUser.phone || 'Not set'}</p>
             </div>
             <div>
                 <label class="text-sm text-gray-600">Rating</label>
                 <div class="flex items-center">
-                    ${generateStars(currentUser.rating)}
-                    <span class="ml-2 text-sm text-gray-600">(${currentUser.reviewCount} reviews)</span>
+                    ${generateStars(currentUser.rating || 0)}
+                    <span class="ml-2 text-sm text-gray-600">(${currentUser.reviewCount || 0} reviews)</span>
                 </div>
             </div>
             <div>
                 <label class="text-sm text-gray-600">Location</label>
-                <p class="font-semibold">${currentUser.location.lat.toFixed(4)}, ${currentUser.location.lng.toFixed(4)}</p>
+                <p class="font-semibold">${currentUser.location.address || 'Not set'}</p>
             </div>
         </div>
     `;
@@ -448,7 +907,7 @@ function loadProfile() {
 
 function showEditProfile() {
     document.getElementById('editName').value = currentUser.name;
-    document.getElementById('editPhone').value = currentUser.phone;
+    document.getElementById('editPhone').value = currentUser.phone || '';
     document.getElementById('editEmail').value = currentUser.email;
     document.getElementById('editProfileModal').classList.remove('hidden');
     document.getElementById('editProfileModal').classList.add('flex');
@@ -498,7 +957,7 @@ function addSkillFromSelect() {
         loadSkills();
         select.value = '';
         showToast('Skill added!', 'success');
-        searchJobs(); // Refresh jobs with new skills
+        searchJobs();
     } else {
         showToast('Skill already added', 'warning');
     }
@@ -527,7 +986,7 @@ function removeSkill(skill) {
     updateUser();
     loadSkills();
     showToast('Skill removed', 'success');
-    searchJobs(); // Refresh jobs
+    searchJobs();
 }
 
 function loadSkills() {
@@ -611,16 +1070,18 @@ function removePortfolio(id) {
 }
 
 function updateUser() {
-    const users = JSON.parse(window.localStorage.getItem('users'));
+    const users = JSON.parse(window.localStorage.getItem('users')) || [];
     const userIndex = users.findIndex(u => u.id === currentUser.id);
-    users[userIndex] = currentUser;
-    window.localStorage.setItem('users', JSON.stringify(users));
+    if (userIndex !== -1) {
+        users[userIndex] = currentUser;
+        window.localStorage.setItem('users', JSON.stringify(users));
+    }
     window.localStorage.setItem('currentUser', JSON.stringify(currentUser));
 }
 
 // Load contracts
 function loadContracts() {
-    const contracts = JSON.parse(window.localStorage.getItem('contracts'));
+    const contracts = JSON.parse(window.localStorage.getItem('contracts')) || [];
     const myContracts = contracts.filter(c => c.seekerId === currentUser.id);
     
     const container = document.getElementById('contractsList');
@@ -629,7 +1090,7 @@ function loadContracts() {
         return;
     }
     
-    const jobs = JSON.parse(window.localStorage.getItem('jobs'));
+    const jobs = JSON.parse(window.localStorage.getItem('jobs')) || [];
     
     container.innerHTML = myContracts.map(contract => {
         const job = jobs.find(j => j.id === contract.jobId);
@@ -666,22 +1127,26 @@ function loadContracts() {
 }
 
 function clockIn(contractId) {
-    const contracts = JSON.parse(window.localStorage.getItem('contracts'));
+    const contracts = JSON.parse(window.localStorage.getItem('contracts')) || [];
     const contract = contracts.find(c => c.id === contractId);
-    contract.clockIn = new Date().toISOString();
-    window.localStorage.setItem('contracts', JSON.stringify(contracts));
-    showToast('Clocked in successfully!', 'success');
-    loadContracts();
+    if (contract) {
+        contract.clockIn = new Date().toISOString();
+        window.localStorage.setItem('contracts', JSON.stringify(contracts));
+        showToast('Clocked in successfully!', 'success');
+        loadContracts();
+    }
 }
 
 function clockOut(contractId) {
-    const contracts = JSON.parse(window.localStorage.getItem('contracts'));
+    const contracts = JSON.parse(window.localStorage.getItem('contracts')) || [];
     const contract = contracts.find(c => c.id === contractId);
-    contract.clockOut = new Date().toISOString();
-    contract.status = 'completed';
-    window.localStorage.setItem('contracts', JSON.stringify(contracts));
-    showToast('Clocked out successfully!', 'success');
-    loadContracts();
+    if (contract) {
+        contract.clockOut = new Date().toISOString();
+        contract.status = 'completed';
+        window.localStorage.setItem('contracts', JSON.stringify(contracts));
+        showToast('Clocked out successfully!', 'success');
+        loadContracts();
+    }
 }
 
 // Toast notification

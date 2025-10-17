@@ -24,6 +24,7 @@
 
 let currentReviewId = null;
 let selectedRating = 0;
+let scheduleCount = 0;
 
 // Tab switching
 function showTab(tabName) {
@@ -37,16 +38,84 @@ function showTab(tabName) {
     }
 }
 
+// Schedule Management for Job Posting
+function addScheduleDay() {
+    const container = document.getElementById('scheduleContainer');
+    const id = scheduleCount++;
+    
+    const scheduleItem = document.createElement('div');
+    scheduleItem.className = 'border rounded-lg p-4 bg-gray-50';
+    scheduleItem.id = `schedule-${id}`;
+    scheduleItem.innerHTML = `
+        <div class="flex justify-between items-center mb-3">
+            <h4 class="font-medium">Working Day ${id + 1}</h4>
+            <button type="button" onclick="removeScheduleDay(${id})" class="text-red-600 hover:text-red-700">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+                <label class="block text-xs font-medium mb-1">Day</label>
+                <select class="schedule-day w-full px-3 py-2 border rounded text-sm" required>
+                    <option value="">Select day</option>
+                    <option value="monday">Monday</option>
+                    <option value="tuesday">Tuesday</option>
+                    <option value="wednesday">Wednesday</option>
+                    <option value="thursday">Thursday</option>
+                    <option value="friday">Friday</option>
+                    <option value="saturday">Saturday</option>
+                    <option value="sunday">Sunday</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium mb-1">Date</label>
+                <input type="date" class="schedule-date w-full px-3 py-2 border rounded text-sm" required>
+            </div>
+            <div>
+                <label class="block text-xs font-medium mb-1">Time</label>
+                <input type="text" class="schedule-time w-full px-3 py-2 border rounded text-sm" placeholder="09:00-17:00" required>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(scheduleItem);
+}
+
+function removeScheduleDay(id) {
+    const element = document.getElementById(`schedule-${id}`);
+    if (element) {
+        element.remove();
+    }
+}
+
 // Post Job Modal
 function showPostJobModal() {
+    // Check subscription limits
+    const jobs = JSON.parse(window.localStorage.getItem('jobs'));
+    const myJobs = jobs.filter(j => j.employerId === currentUser.id);
+    
+    if (currentUser.subscription === 'free' && myJobs.length >= 3) {
+        showToast('Free plan allows only 3 job posts. Upgrade to Pro for unlimited posts!', 'warning');
+        showTab('subscription');
+        return;
+    }
+    
     document.getElementById('postJobModal').classList.remove('hidden');
     document.getElementById('postJobModal').classList.add('flex');
+    
+    // Add initial schedule day
+    document.getElementById('scheduleContainer').innerHTML = '';
+    scheduleCount = 0;
+    addScheduleDay();
 }
 
 function closePostJobModal() {
     document.getElementById('postJobModal').classList.add('hidden');
     document.getElementById('postJobModal').classList.remove('flex');
     document.getElementById('postJobForm').reset();
+    document.getElementById('scheduleContainer').innerHTML = '';
 }
 
 function handlePostJob(event) {
@@ -54,7 +123,28 @@ function handlePostJob(event) {
     
     const jobs = JSON.parse(window.localStorage.getItem('jobs'));
     const skills = document.getElementById('jobSkills').value.split(',').map(s => s.trim()).filter(s => s);
-    const days = document.getElementById('jobDays').value.split(',').map(d => d.trim().toLowerCase()).filter(d => d);
+    
+    // Collect schedule data
+    const scheduleDays = [];
+    const scheduleItems = document.querySelectorAll('#scheduleContainer > div');
+    scheduleItems.forEach(item => {
+        const day = item.querySelector('.schedule-day').value;
+        const date = item.querySelector('.schedule-date').value;
+        const time = item.querySelector('.schedule-time').value;
+        
+        if (day && date && time) {
+            scheduleDays.push({
+                day: day,
+                date: date,
+                time: time
+            });
+        }
+    });
+    
+    if (scheduleDays.length === 0) {
+        showToast('Please add at least one working day', 'warning');
+        return;
+    }
     
     const newJob = {
         id: Date.now(),
@@ -68,9 +158,8 @@ function handlePostJob(event) {
         description: document.getElementById('jobDescription').value,
         skills: skills,
         schedule: {
-            type: 'weekly',
-            days: days,
-            times: document.getElementById('jobTimes').value
+            type: 'custom',
+            days: scheduleDays
         },
         posted: new Date().toISOString(),
         employerId: currentUser.id
@@ -95,7 +184,12 @@ function loadMyJobs() {
         return;
     }
     
-    container.innerHTML = myJobs.map(job => `
+    container.innerHTML = myJobs.map(job => {
+        const scheduleDisplay = job.schedule.days ? 
+            job.schedule.days.map(d => `${d.day.charAt(0).toUpperCase() + d.day.slice(1)}: ${d.date} (${d.time})`).join('<br>') :
+            `${job.schedule.days} (${job.schedule.times})`;
+        
+        return `
         <div class="bg-white rounded-xl shadow-lg p-6">
             <div class="flex justify-between items-start mb-3">
                 <div>
@@ -122,9 +216,14 @@ function loadMyJobs() {
             <div class="flex flex-wrap gap-2 mb-3">
                 ${job.skills.map(skill => `<span class="badge badge-primary">${skill}</span>`).join('')}
             </div>
+            <div class="bg-gray-50 rounded-lg p-3 mb-3">
+                <p class="text-xs font-medium text-gray-700 mb-1">Working Schedule:</p>
+                <p class="text-xs text-gray-600">${scheduleDisplay}</p>
+            </div>
             <p class="text-xs text-gray-500">Posted ${new Date(job.posted).toLocaleDateString()}</p>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 function deleteJob(jobId) {
@@ -204,6 +303,9 @@ function acceptApplication(appId) {
     app.status = 'accepted';
     window.localStorage.setItem('applications', JSON.stringify(applications));
     
+    // Update seeker's availability
+    updateSeekerAvailability(app.seekerId, app.jobId);
+    
     // Create contract
     const contracts = JSON.parse(window.localStorage.getItem('contracts'));
     const jobs = JSON.parse(window.localStorage.getItem('jobs'));
@@ -243,6 +345,32 @@ function rejectApplication(appId) {
     
     showToast('Application rejected', 'success');
     loadApplications();
+}
+
+// Update seeker availability when application is accepted
+function updateSeekerAvailability(seekerId, jobId) {
+    const users = JSON.parse(window.localStorage.getItem('users'));
+    const jobs = JSON.parse(window.localStorage.getItem('jobs'));
+    const seeker = users.find(u => u.id === seekerId);
+    const job = jobs.find(j => j.id === jobId);
+    
+    if (!seeker || !job || !seeker.availability) return;
+    
+    // Mark schedule days as unavailable
+    if (job.schedule && job.schedule.days && Array.isArray(job.schedule.days)) {
+        job.schedule.days.forEach(scheduleDay => {
+            const availDay = seeker.availability.find(a => 
+                a.day.toLowerCase() === scheduleDay.day.toLowerCase()
+            );
+            
+            if (availDay) {
+                availDay.available = false;
+                availDay.bookedFor = jobId;
+            }
+        });
+        
+        window.localStorage.setItem('users', JSON.stringify(users));
+    }
 }
 
 // Load bids
@@ -306,6 +434,9 @@ function acceptBid(bidId) {
     const bid = bids.find(b => b.id === bidId);
     bid.status = 'accepted';
     window.localStorage.setItem('bids', JSON.stringify(bids));
+    
+    // Update seeker's availability
+    updateSeekerAvailability(bid.seekerId, bid.jobId);
     
     // Create contract with bid amount
     const contracts = JSON.parse(window.localStorage.getItem('contracts'));
@@ -530,8 +661,20 @@ function submitReview() {
     loadContracts();
 }
 
-// Subscription
+// Subscription Management
 function subscribe(plan) {
+    const prices = {
+        'free': 0,
+        'pro': 99,
+        'enterprise': 299
+    };
+    
+    if (plan !== 'free') {
+        if (!confirm(`Confirm subscription to ${plan.toUpperCase()} plan for ${formatCurrency(prices[plan])}/month?`)) {
+            return;
+        }
+    }
+    
     currentUser.subscription = plan;
     const users = JSON.parse(window.localStorage.getItem('users'));
     const userIndex = users.findIndex(u => u.id === currentUser.id);
@@ -540,11 +683,55 @@ function subscribe(plan) {
     window.localStorage.setItem('currentUser', JSON.stringify(currentUser));
     
     document.getElementById('currentPlan').textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
-    showToast(`Subscribed to ${plan} plan!`, 'success');
+    showToast(`Successfully subscribed to ${plan.toUpperCase()} plan!`, 'success');
+    
+    // Track revenue
+    if (plan !== 'free') {
+        trackRevenue('subscription', plan, prices[plan]);
+    }
 }
 
-function contactAdvertising() {
-    showToast('Thank you for your interest! Our team will contact you soon.', 'success');
+// Advertisement Purchase
+function purchaseAdvertising(type, price) {
+    if (!confirm(`Confirm purchase of ${type} advertising for ${formatCurrency(price)}?`)) {
+        return;
+    }
+    
+    // Initialize advertisements if not exists
+    let advertisements = JSON.parse(window.localStorage.getItem('advertisements') || '[]');
+    
+    advertisements.push({
+        id: Date.now(),
+        employerId: currentUser.id,
+        type: type,
+        price: price,
+        purchaseDate: new Date().toISOString(),
+        status: 'active',
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days
+    });
+    
+    window.localStorage.setItem('advertisements', JSON.stringify(advertisements));
+    
+    showToast(`${type} advertising purchased successfully!`, 'success');
+    
+    // Track revenue
+    trackRevenue('advertising', type, price);
+}
+
+// Revenue Tracking
+function trackRevenue(type, category, amount) {
+    let revenue = JSON.parse(window.localStorage.getItem('revenue') || '[]');
+    
+    revenue.push({
+        id: Date.now(),
+        type: type,
+        category: category,
+        amount: amount,
+        userId: currentUser.id,
+        date: new Date().toISOString()
+    });
+    
+    window.localStorage.setItem('revenue', JSON.stringify(revenue));
 }
 
 // Utility functions
