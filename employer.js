@@ -25,6 +25,10 @@
 let currentReviewId = null;
 let selectedRating = 0;
 let scheduleCount = 0;
+let map, marker;
+let selectedDates = {};
+let selectedDays = {};
+let locationSearchTimeout;
 
 // Tab switching
 function showTab(tabName) {
@@ -105,60 +109,518 @@ function showPostJobModal() {
     document.getElementById('postJobModal').classList.remove('hidden');
     document.getElementById('postJobModal').classList.add('flex');
     
-    // Add initial schedule day
-    document.getElementById('scheduleContainer').innerHTML = '';
-    scheduleCount = 0;
-    addScheduleDay();
+    // Initialize Select2 for skills
+    setTimeout(() => {
+        $('#jobSkills').select2({
+            placeholder: 'Select skills (you can add custom ones)',
+            tags: true,
+            tokenSeparators: [',']
+        });
+    }, 100);
+    
+    // Initialize Map
+    setTimeout(() => {
+        if (!map) {
+            const lat = currentUser.location?.lat || 3.1569;
+            const lng = currentUser.location?.lng || 101.7123;
+            
+            map = L.map('map').setView([lat, lng], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            marker = L.marker([lat, lng], {
+                draggable: true
+            }).addTo(map);
+            
+            // Click on map to set location
+            map.on('click', (e) => {
+                marker.setLatLng(e.latlng);
+                document.getElementById('jobLat').value = e.latlng.lat;
+                document.getElementById('jobLng').value = e.latlng.lng;
+            });
+            
+            // Drag marker
+            marker.on('dragend', (e) => {
+                const pos = marker.getLatLng();
+                document.getElementById('jobLat').value = pos.lat;
+                document.getElementById('jobLng').value = pos.lng;
+            });
+            
+            document.getElementById('jobLat').value = lat;
+            document.getElementById('jobLng').value = lng;
+        } else {
+            map.invalidateSize();
+        }
+    }, 200);
+    
+    // Location search functionality with autocomplete
+    const locationInput = document.getElementById('jobLocation');
+    const suggestionsDiv = document.createElement('div');
+    suggestionsDiv.id = 'locationSuggestions';
+    suggestionsDiv.className = 'absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-60 overflow-y-auto shadow-lg hidden';
+    locationInput.parentElement.style.position = 'relative';
+    locationInput.parentElement.appendChild(suggestionsDiv);
+    
+    locationInput.addEventListener('input', async (e) => {
+        const query = e.target.value;
+        
+        if (query.length < 3) {
+            suggestionsDiv.classList.add('hidden');
+            return;
+        }
+        
+        // Debounce search
+        clearTimeout(locationSearchTimeout);
+        locationSearchTimeout = setTimeout(async () => {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    suggestionsDiv.innerHTML = data.map(place => `
+                        <div class="location-suggestion p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0" 
+                            data-lat="${place.lat}" 
+                            data-lon="${place.lon}"
+                            data-display="${place.display_name}">
+                            <div class="font-medium text-sm">${place.display_name}</div>
+                        </div>
+                    `).join('');
+                    suggestionsDiv.classList.remove('hidden');
+                    
+                    // Add click handlers to suggestions
+                    document.querySelectorAll('.location-suggestion').forEach(item => {
+                        item.addEventListener('click', () => {
+                            const lat = parseFloat(item.dataset.lat);
+                            const lon = parseFloat(item.dataset.lon);
+                            const displayName = item.dataset.display;
+                            
+                            locationInput.value = displayName;
+                            map.setView([lat, lon], 15);
+                            marker.setLatLng([lat, lon]);
+                            document.getElementById('jobLat').value = lat;
+                            document.getElementById('jobLng').value = lon;
+                            suggestionsDiv.classList.add('hidden');
+                            showToast('Location selected!', 'success');
+                        });
+                    });
+                } else {
+                    suggestionsDiv.innerHTML = '<div class="p-3 text-gray-500 text-sm">No locations found</div>';
+                    suggestionsDiv.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error('Location search error:', err);
+            }
+        }, 300);
+    });
+    
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!locationInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+            suggestionsDiv.classList.add('hidden');
+        }
+    });
+    
+    // Old Enter key search (keep as backup)
+    locationInput.addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            suggestionsDiv.classList.add('hidden');
+            const query = e.target.value;
+            if (query) {
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                        const lat = parseFloat(data[0].lat);
+                        const lon = parseFloat(data[0].lon);
+                        map.setView([lat, lon], 13);
+                        marker.setLatLng([lat, lon]);
+                        document.getElementById('jobLat').value = lat;
+                        document.getElementById('jobLng').value = lon;
+                        showToast('Location found!', 'success');
+                    } else {
+                        showToast('Location not found', 'warning');
+                    }
+                } catch (err) {
+                    console.error('Location search error:', err);
+                    showToast('Error searching location', 'warning');
+                }
+            }
+        }
+    });
+    
+    // Initialize Calendar
+    initCalendar();
+    selectedDates = {};
+    selectedDays = {};
+    
+    // Setup day checkboxes for full-time
+    document.querySelectorAll('.day-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', (e) => {
+            const day = e.target.value;
+            if (e.target.checked) {
+                selectedDays[day] = {
+                    day: day,
+                    timeSlots: [{ start: '09:00', end: '17:00' }]
+                };
+            } else {
+                delete selectedDays[day];
+            }
+            renderSelectedDays();
+        });
+    });
 }
 
+// REPLACE your existing closePostJobModal function with this:
 function closePostJobModal() {
     document.getElementById('postJobModal').classList.add('hidden');
     document.getElementById('postJobModal').classList.remove('flex');
     document.getElementById('postJobForm').reset();
-    document.getElementById('scheduleContainer').innerHTML = '';
+    
+    // Destroy Select2
+    if ($('#jobSkills').data('select2')) {
+        $('#jobSkills').select2('destroy');
+    }
+    
+    selectedDates = {};
+    selectedDays = {};
+    
+    // Reset checkboxes
+    document.querySelectorAll('.day-checkbox').forEach(cb => cb.checked = false);
+}
+
+// ADD this new function for salary label update
+function updateSalaryLabel() {
+    const jobType = document.getElementById('jobType').value;
+    const indicator = document.getElementById('salaryIndicator');
+    indicator.textContent = jobType === 'full-time' ? '- per month' : '- per hour';
+    
+    // Toggle schedule view based on job type
+    const fullTimeSchedule = document.getElementById('fullTimeSchedule');
+    const partTimeSchedule = document.getElementById('partTimeSchedule');
+    
+    if (jobType === 'full-time') {
+        fullTimeSchedule.classList.remove('hidden');
+        partTimeSchedule.classList.add('hidden');
+        // Reset part-time data
+        selectedDates = {};
+    } else {
+        fullTimeSchedule.classList.add('hidden');
+        partTimeSchedule.classList.remove('hidden');
+        // Reset full-time data
+        selectedDays = {};
+        document.querySelectorAll('.day-checkbox').forEach(cb => cb.checked = false);
+        document.getElementById('selectedDaysContainer').innerHTML = '';
+        // Initialize calendar for part-time
+        initCalendar();
+    }
+}
+
+// ADD these new functions for calendar functionality
+
+// For Full-time: Render selected days of week
+function renderSelectedDays() {
+    const container = document.getElementById('selectedDaysContainer');
+    
+    if (Object.keys(selectedDays).length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500">No days selected yet</p>';
+        return;
+    }
+    
+    const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const sortedDays = Object.keys(selectedDays).sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
+    
+    container.innerHTML = sortedDays.map(day => {
+        const dayObj = selectedDays[day];
+        
+        return `
+            <div class="border rounded-lg p-3 md:p-4 bg-gray-50">
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
+                    <h4 class="font-medium text-sm md:text-base capitalize">${day}</h4>
+                </div>
+                
+                <div class="space-y-2" id="dayTimeSlots-${day}">
+                    ${dayObj.timeSlots.map((slot, idx) => `
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 bg-white rounded border">
+                            <div class="flex items-center gap-2 flex-1">
+                                <input type="time" value="${slot.start}" 
+                                    onchange="updateDayTimeSlot('${day}', ${idx}, 'start', this.value)" 
+                                    class="flex-1 border rounded px-2 py-1.5 text-sm">
+                                <span class="text-sm text-gray-600">to</span>
+                                <input type="time" value="${slot.end}" 
+                                    onchange="updateDayTimeSlot('${day}', ${idx}, 'end', this.value)" 
+                                    class="flex-1 border rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <button type="button" onclick="removeDayTimeSlot('${day}', ${idx})" 
+                                class="self-end sm:self-auto text-red-600 hover:text-red-700 p-1">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <button type="button" onclick="addDayTimeSlot('${day}')" 
+                    class="mt-2 w-full py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 text-xs md:text-sm font-medium">
+                    + Add Time Slot
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function addDayTimeSlot(day) {
+    if (!selectedDays[day].timeSlots) {
+        selectedDays[day].timeSlots = [];
+    }
+    selectedDays[day].timeSlots.push({ start: '09:00', end: '17:00' });
+    renderSelectedDays();
+}
+
+function removeDayTimeSlot(day, index) {
+    selectedDays[day].timeSlots.splice(index, 1);
+    if (selectedDays[day].timeSlots.length === 0) {
+        selectedDays[day].timeSlots.push({ start: '09:00', end: '17:00' });
+    }
+    renderSelectedDays();
+}
+
+function updateDayTimeSlot(day, index, field, value) {
+    selectedDays[day].timeSlots[index][field] = value;
+}
+
+// For Part-time: Calendar functions
+function initCalendar() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    
+    document.getElementById('calendarMonth').textContent = 
+        new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    const calendarDays = document.getElementById('calendarDays');
+    calendarDays.innerHTML = '';
+    
+    // Empty cells for days before month starts
+    for (let i = 0; i < firstDay; i++) {
+        const emptyDay = document.createElement('div');
+        emptyDay.className = 'calendar-day disabled';
+        calendarDays.appendChild(emptyDay);
+    }
+    
+    // Days of the month
+    const today = now.getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dayDiv = document.createElement('div');
+        dayDiv.className = 'calendar-day text-xs sm:text-sm';
+        dayDiv.textContent = day;
+        
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        
+        if (day < today) {
+            dayDiv.classList.add('past', 'disabled');
+        } else {
+            dayDiv.onclick = () => toggleDate(dateStr, dayDiv);
+        }
+        
+        calendarDays.appendChild(dayDiv);
+    }
+}
+
+function toggleDate(dateStr, element) {
+    if (selectedDates[dateStr]) {
+        delete selectedDates[dateStr];
+        element.classList.remove('selected');
+    } else {
+        selectedDates[dateStr] = { 
+            date: dateStr, 
+            timeSlots: [{ start: '09:00', end: '17:00' }] 
+        };
+        element.classList.add('selected');
+    }
+    renderSelectedDates();
+}
+
+function renderSelectedDates() {
+    const container = document.getElementById('selectedDatesContainer');
+    
+    if (Object.keys(selectedDates).length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500">No dates selected yet</p>';
+        return;
+    }
+    
+    container.innerHTML = Object.keys(selectedDates).sort().map(dateStr => {
+        const dateObj = selectedDates[dateStr];
+        const date = new Date(dateStr + 'T00:00:00');
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+        
+        return `
+            <div class="border rounded-lg p-3 md:p-4 bg-gray-50">
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3">
+                    <div>
+                        <h4 class="font-medium text-sm md:text-base">${dayName}</h4>
+                        <p class="text-xs md:text-sm text-gray-600">${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                    </div>
+                    <button type="button" onclick="removeDate('${dateStr}')" class="self-end sm:self-auto text-red-600 hover:text-red-700">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="space-y-2" id="timeSlots-${dateStr}">
+                    ${dateObj.timeSlots.map((slot, idx) => `
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 bg-white rounded border">
+                            <div class="flex items-center gap-2 flex-1">
+                                <input type="time" value="${slot.start}" 
+                                    onchange="updateTimeSlot('${dateStr}', ${idx}, 'start', this.value)" 
+                                    class="flex-1 border rounded px-2 py-1.5 text-sm">
+                                <span class="text-sm text-gray-600">to</span>
+                                <input type="time" value="${slot.end}" 
+                                    onchange="updateTimeSlot('${dateStr}', ${idx}, 'end', this.value)" 
+                                    class="flex-1 border rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <button type="button" onclick="removeTimeSlot('${dateStr}', ${idx})" 
+                                class="self-end sm:self-auto text-red-600 hover:text-red-700 p-1">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <button type="button" onclick="addTimeSlot('${dateStr}')" 
+                    class="mt-2 w-full py-2 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 text-xs md:text-sm font-medium">
+                    + Add Time Slot
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function removeDate(dateStr) {
+    delete selectedDates[dateStr];
+    const date = new Date(dateStr + 'T00:00:00');
+    const dayNum = date.getDate();
+    
+    const dayElements = document.querySelectorAll('.calendar-day.selected');
+    dayElements.forEach(el => {
+        if (el.textContent == dayNum) {
+            el.classList.remove('selected');
+        }
+    });
+    renderSelectedDates();
+}
+
+function addTimeSlot(dateStr) {
+    if (!selectedDates[dateStr].timeSlots) {
+        selectedDates[dateStr].timeSlots = [];
+    }
+    selectedDates[dateStr].timeSlots.push({ start: '09:00', end: '17:00' });
+    renderSelectedDates();
+}
+
+function removeTimeSlot(dateStr, index) {
+    selectedDates[dateStr].timeSlots.splice(index, 1);
+    if (selectedDates[dateStr].timeSlots.length === 0) {
+        // Keep at least one time slot or remove the date
+        selectedDates[dateStr].timeSlots.push({ start: '09:00', end: '17:00' });
+    }
+    renderSelectedDates();
+}
+
+function updateTimeSlot(dateStr, index, field, value) {
+    selectedDates[dateStr].timeSlots[index][field] = value;
 }
 
 function handlePostJob(event) {
     event.preventDefault();
     
     const jobs = JSON.parse(window.localStorage.getItem('jobs'));
-    const skills = document.getElementById('jobSkills').value.split(',').map(s => s.trim()).filter(s => s);
+    const skills = $('#jobSkills').val();
+    const jobType = document.getElementById('jobType').value;
     
-    // Collect schedule data
-    const scheduleDays = [];
-    const scheduleItems = document.querySelectorAll('#scheduleContainer > div');
-    scheduleItems.forEach(item => {
-        const day = item.querySelector('.schedule-day').value;
-        const date = item.querySelector('.schedule-date').value;
-        const time = item.querySelector('.schedule-time').value;
-        
-        if (day && date && time) {
+    // Validate skills
+    if (!skills || skills.length === 0) {
+        showToast('Please select at least one skill', 'warning');
+        return;
+    }
+    
+    // Validate location
+    const lat = document.getElementById('jobLat').value;
+    const lng = document.getElementById('jobLng').value;
+    
+    if (!lat || !lng) {
+        showToast('Please set a location on the map', 'warning');
+        return;
+    }
+    
+    // Collect and validate schedule data based on job type
+    let scheduleDays = [];
+    
+    if (jobType === 'full-time') {
+        // For full-time: use selected days of week
+        for (const day in selectedDays) {
+            const dayData = selectedDays[day];
+            if (!dayData.timeSlots || dayData.timeSlots.length === 0) {
+                showToast(`Please add at least one time slot for ${day}`, 'warning');
+                return;
+            }
+            
             scheduleDays.push({
                 day: day,
-                date: date,
-                time: time
+                date: null, // No specific date for full-time
+                timeSlots: dayData.timeSlots
             });
         }
-    });
-    
-    if (scheduleDays.length === 0) {
-        showToast('Please add at least one working day', 'warning');
-        return;
+        
+        if (scheduleDays.length === 0) {
+            showToast('Please select at least one working day', 'warning');
+            return;
+        }
+    } else {
+        // For part-time: use selected specific dates
+        for (const dateStr in selectedDates) {
+            const dateData = selectedDates[dateStr];
+            if (!dateData.timeSlots || dateData.timeSlots.length === 0) {
+                showToast(`Please add at least one time slot for ${dateStr}`, 'warning');
+                return;
+            }
+            
+            const date = new Date(dateStr + 'T00:00:00');
+            scheduleDays.push({
+                day: date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(),
+                date: dateStr,
+                timeSlots: dateData.timeSlots
+            });
+        }
+        
+        if (scheduleDays.length === 0) {
+            showToast('Please select at least one working date from the calendar', 'warning');
+            return;
+        }
     }
     
     const newJob = {
         id: Date.now(),
         title: document.getElementById('jobTitle').value,
         company: document.getElementById('jobCompany').value,
-        type: document.getElementById('jobType').value,
+        type: jobType,
         salary: parseFloat(document.getElementById('jobSalary').value),
         location: document.getElementById('jobLocation').value,
-        lat: currentUser.location.lat,
-        lng: currentUser.location.lng,
+        lat: parseFloat(lat),
+        lng: parseFloat(lng),
         description: document.getElementById('jobDescription').value,
         skills: skills,
         schedule: {
-            type: 'custom',
+            type: jobType === 'full-time' ? 'recurring' : 'specific',
             days: scheduleDays
         },
         posted: new Date().toISOString(),
@@ -172,7 +634,6 @@ function handlePostJob(event) {
     closePostJobModal();
     loadMyJobs();
 }
-
 // Load employer's jobs
 function loadMyJobs() {
     const jobs = JSON.parse(window.localStorage.getItem('jobs'));
@@ -185,9 +646,27 @@ function loadMyJobs() {
     }
     
     container.innerHTML = myJobs.map(job => {
-        const scheduleDisplay = job.schedule.days ? 
-            job.schedule.days.map(d => `${d.day.charAt(0).toUpperCase() + d.day.slice(1)}: ${d.date} (${d.time})`).join('<br>') :
-            `${job.schedule.days} (${job.schedule.times})`;
+        // Better schedule display
+        let scheduleDisplay = 'Not specified';
+        if (job.schedule && job.schedule.days && Array.isArray(job.schedule.days)) {
+            if (job.schedule.type === 'recurring') {
+                // Full-time: Show days of week
+                scheduleDisplay = job.schedule.days.map(d => {
+                    const timeSlots = d.timeSlots ? 
+                        d.timeSlots.map(t => `${t.start}-${t.end}`).join(', ') : 
+                        '';
+                    return `<div class="mb-1"><strong>${d.day.charAt(0).toUpperCase() + d.day.slice(1)}:</strong><br><span class="text-xs text-gray-500">${timeSlots}</span></div>`;
+                }).join('');
+            } else {
+                // Part-time: Show specific dates
+                scheduleDisplay = job.schedule.days.map(d => {
+                    const timeSlots = d.timeSlots ? 
+                        d.timeSlots.map(t => `${t.start}-${t.end}`).join(', ') : 
+                        '';
+                    return `<div class="mb-1"><strong>${d.day.charAt(0).toUpperCase() + d.day.slice(1)}:</strong> ${d.date}<br><span class="text-xs text-gray-500">${timeSlots}</span></div>`;
+                }).join('');
+            }
+        }
         
         return `
         <div class="bg-white rounded-xl shadow-lg p-6">
@@ -208,6 +687,13 @@ function loadMyJobs() {
             <p class="text-gray-600 text-sm mb-3">${job.description}</p>
             <div class="flex items-center text-gray-600 text-sm mb-2">
                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <span>${job.location}</span>
+            </div>
+            <div class="flex items-center text-gray-600 text-sm mb-2">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/>
                 </svg>
                 <span data-price="${job.salary}">${formatCurrency(job.salary)}</span>
@@ -217,8 +703,8 @@ function loadMyJobs() {
                 ${job.skills.map(skill => `<span class="badge badge-primary">${skill}</span>`).join('')}
             </div>
             <div class="bg-gray-50 rounded-lg p-3 mb-3">
-                <p class="text-xs font-medium text-gray-700 mb-1">Working Schedule:</p>
-                <p class="text-xs text-gray-600">${scheduleDisplay}</p>
+                <p class="text-xs font-medium text-gray-700 mb-1">Working Schedule ${job.schedule.type === 'recurring' ? '(Recurring)' : '(Specific Dates)'}:</p>
+                <div class="text-xs text-gray-600">${scheduleDisplay}</div>
             </div>
             <p class="text-xs text-gray-500">Posted ${new Date(job.posted).toLocaleDateString()}</p>
         </div>

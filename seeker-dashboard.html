@@ -60,6 +60,82 @@
             object-fit: cover;
             border: 4px solid #e0e7ff;
         }
+
+        /* Calendar Styles */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+.calendar-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+    position: relative;
+}
+.calendar-day:hover {
+    background: #e0e7ff;
+}
+.calendar-day.disabled {
+    color: #d1d5db;
+    cursor: not-allowed;
+}
+.calendar-day.disabled:hover {
+    background: transparent;
+}
+.calendar-day.selected {
+    background: #6366f1;
+    color: white;
+}
+.calendar-day.has-slots {
+    border: 2px solid #10b981;
+}
+.calendar-header {
+    text-align: center;
+    font-weight: 600;
+    padding: 8px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+/* Time Slot Styles */
+.time-slot-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+/* Video Upload */
+.video-preview {
+    max-width: 100%;
+    border-radius: 8px;
+    margin-top: 8px;
+}
+
+/* Certificate Card */
+.cert-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+/* Resume Summary */
+.resume-summary {
+    background: #f9fafb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+}
     </style>
 </head>
 <body class="bg-gray-50">
@@ -176,23 +252,44 @@
             </div>
 
             <!-- Roster Tab -->
-            <div id="rosterTab" class="tab-content hidden">
-                <div class="bg-white rounded-xl shadow-lg p-6">
-                    <h2 class="text-2xl font-bold mb-4">My Availability Roster</h2>
-                    
-                    <div id="rosterEntries" class="space-y-4 mb-4">
-                        <!-- Roster entries will be added here -->
-                    </div>
-                    
-                    <button onclick="addRosterEntry()" class="w-full mb-4 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700">
-                        + Add Availability
-                    </button>
-                    
-                    <button onclick="saveRoster()" class="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700">
-                        Save Roster
-                    </button>
-                </div>
+           <div id="rosterTab" class="tab-content hidden">
+    <div class="bg-white rounded-xl shadow-lg p-6">
+        <h2 class="text-2xl font-bold mb-4">My Availability Calendar</h2>
+        
+        <!-- Calendar -->
+        <div class="mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="calendarMonth"></h3>
+                <button onclick="saveRoster()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+                    Save Availability
+                </button>
             </div>
+            
+            <div class="calendar-grid mb-2">
+                <div class="calendar-header">Sun</div>
+                <div class="calendar-header">Mon</div>
+                <div class="calendar-header">Tue</div>
+                <div class="calendar-header">Wed</div>
+                <div class="calendar-header">Thu</div>
+                <div class="calendar-header">Fri</div>
+                <div class="calendar-header">Sat</div>
+            </div>
+            
+            <div id="calendarDays" class="calendar-grid"></div>
+        </div>
+        
+        <!-- Time Slots for Selected Date -->
+        <div id="timeSlotsSection" class="hidden">
+            <div class="border-t pt-4">
+                <h4 class="font-semibold mb-3">Time Slots for <span id="selectedDateText"></span></h4>
+                <div id="timeSlotsList" class="space-y-2 mb-3"></div>
+                <button onclick="addTimeSlotToDate()" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">
+                    + Add Time Slot
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
             <!-- Profile Tab -->
             <div id="profileTab" class="tab-content hidden">
@@ -230,6 +327,15 @@
                         Upload Resume
                     </label>
                 </div>
+
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+    <h3 class="text-xl font-bold mb-4">Certificates</h3>
+    <div id="certificatesList" class="space-y-3 mb-4"></div>
+    <label class="bg-indigo-600 text-white px-6 py-2 rounded-lg cursor-pointer hover:bg-indigo-700 inline-block">
+        <input type="file" id="certUpload" accept=".pdf,.jpg,.jpeg,.png" class="hidden" onchange="uploadCertificate(event)">
+        Upload Certificate
+    </label>
+</div>
 
                 <!-- Skills Section -->
                 <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
@@ -339,28 +445,45 @@
     </div>
 
     <div id="portfolioModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
-        <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4">
-            <h3 class="text-2xl font-bold mb-4">Add Portfolio Item</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium mb-2">Title</label>
-                    <input type="text" id="portfolioTitle" class="w-full px-4 py-2 border rounded-lg" placeholder="e.g., Barista at Starbucks">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-2">Description</label>
-                    <textarea id="portfolioDesc" rows="3" class="w-full px-4 py-2 border rounded-lg" placeholder="Describe your experience..."></textarea>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-2">Duration</label>
-                    <input type="text" id="portfolioDuration" class="w-full px-4 py-2 border rounded-lg" placeholder="e.g., 2020-2022">
-                </div>
+    <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4 max-h-screen overflow-y-auto">
+        <h3 class="text-2xl font-bold mb-4">Add Portfolio Item</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-2">Title</label>
+                <input type="text" id="portfolioTitle" class="w-full px-4 py-2 border rounded-lg" placeholder="e.g., Barista at Starbucks">
             </div>
-            <div class="flex gap-3 mt-6">
-                <button onclick="closePortfolioModal()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button onclick="savePortfolio()" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Add</button>
+            <div>
+                <label class="block text-sm font-medium mb-2">Description</label>
+                <textarea id="portfolioDesc" rows="3" class="w-full px-4 py-2 border rounded-lg" placeholder="Describe your experience..."></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2">Duration</label>
+                <input type="text" id="portfolioDuration" class="w-full px-4 py-2 border rounded-lg" placeholder="e.g., 2020-2022">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2">Upload Video (Optional)</label>
+                <input type="file" id="portfolioVideo" accept="video/*" class="w-full px-4 py-2 border rounded-lg text-sm">
+                <p class="text-xs text-gray-500 mt-1">Max 50MB</p>
             </div>
         </div>
+        <div class="flex gap-3 mt-6">
+            <button onclick="closePortfolioModal()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="savePortfolio()" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Add</button>
+        </div>
     </div>
+</div>
+
+<div id="skillCertModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+        <h3 class="text-2xl font-bold mb-4">Upload Certificate</h3>
+        <p class="text-sm text-gray-600 mb-4">Upload certificate for: <strong id="certSkillName"></strong></p>
+        <input type="file" id="skillCertFile" accept=".pdf,.jpg,.jpeg,.png" class="w-full px-4 py-2 border rounded-lg text-sm mb-4">
+        <div class="flex gap-3">
+            <button onclick="closeSkillCertModal()" class="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onclick="uploadSkillCertificate()" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">Upload</button>
+        </div>
+    </div>
+</div>
 
     <script src="app.js"></script>
     <script src="translations.js"></script>

@@ -26,6 +26,8 @@ let currentJobId = null;
 let map = null;
 let userMarker = null;
 let jobMarkers = [];
+let selectedDate = null; // For calendar
+let currentSkillForCert = null; // For skill certificate upload
 
 // Geocoding function to convert address to coordinates
 async function geocodeAddress(address) {
@@ -254,6 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     initLocation();
+    initCalendar(); // Initialize calendar for roster
     searchJobs();
     loadProfile();
     loadSkills();
@@ -262,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPortfolio();
     loadResume();
     loadProfilePhoto();
+    loadCertificates(); // Load general certificates
 });
 
 // Tab switching
@@ -273,6 +277,11 @@ function showTab(tabName) {
     const btn = document.querySelector(`[data-tab="${tabName}"]`);
     if (btn) {
         btn.classList.add('tab-active', 'text-indigo-600');
+    }
+    
+    // Refresh calendar when switching to roster tab
+    if (tabName === 'roster') {
+        initCalendar();
     }
 }
 
@@ -308,15 +317,6 @@ function searchJobs() {
         const matchesType = !typeFilter || job.type === typeFilter;
         if (!matchesType) return false;
         
-        // Skill matching
-        const hasRequiredSkills = userSkills.length === 0 || 
-            job.skills.some(skill => userSkills.includes(skill));
-        if (!hasRequiredSkills) return false;
-        
-        // Roster matching
-        const matchesRoster = checkRosterMatch(job, userRoster);
-        if (!matchesRoster) return false;
-        
         matchedJobs++;
         return true;
     });
@@ -325,45 +325,13 @@ function searchJobs() {
     const matchInfo = document.getElementById('matchInfo');
     if (matchInfo) {
         if (filteredJobs.length === 0) {
-            matchInfo.innerHTML = `<span class="text-orange-600">⚠️ No jobs match your skills and availability. Try updating your skills or roster.</span>`;
+            matchInfo.innerHTML = `<span class="text-orange-600">⚠️ No jobs match your criteria. Try updating your filters.</span>`;
         } else {
             matchInfo.innerHTML = `<span class="text-green-600">✓ Found ${filteredJobs.length} job(s) matching your profile</span>`;
         }
     }
     
     displayJobs(filteredJobs);
-}
-
-function checkRosterMatch(job, userRoster) {
-    // If user has no roster set, show all jobs
-    if (!userRoster) return true;
-    
-    // Handle both array (new format) and object (old format) roster structures
-    if (Array.isArray(userRoster)) {
-        // New format with dates
-        if (userRoster.length === 0) return true;
-        
-        if (job.schedule && job.schedule.type === 'weekly' && job.schedule.days) {
-            return job.schedule.days.some(jobDay => {
-                return userRoster.some(rosterEntry => {
-                    const rosterDayName = new Date(rosterEntry.date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-                    return rosterDayName === jobDay.toLowerCase();
-                });
-            });
-        }
-    } else {
-        // Old format with day objects
-        if (Object.keys(userRoster).length === 0) return true;
-        
-        if (job.schedule && job.schedule.type === 'weekly' && job.schedule.days) {
-            return job.schedule.days.some(jobDay => {
-                const dayKey = jobDay.toLowerCase();
-                return userRoster[dayKey] !== undefined;
-            });
-        }
-    }
-    
-    return true;
 }
 
 function displayJobs(jobs) {
@@ -424,6 +392,7 @@ function displayJobs(jobs) {
     }).join('');
 }
 
+// FIX: Make sure showJobDetails works properly
 function showJobDetails(jobId) {
     const jobs = JSON.parse(window.localStorage.getItem('jobs')) || [];
     const job = jobs.find(j => j.id === jobId);
@@ -433,6 +402,18 @@ function showJobDetails(jobId) {
     
     const distance = calculateDistance(currentUser.location.lat, currentUser.location.lng, job.lat, job.lng);
     const matchingSkills = job.skills.filter(skill => currentUser.skills.includes(skill));
+    
+    // Handle schedule display - check if days is array or string
+    let scheduleDisplay = '';
+    if (job.schedule && job.schedule.days) {
+        if (Array.isArray(job.schedule.days)) {
+            // Array format: ["monday", "tuesday"]
+            scheduleDisplay = '["monday", "tuesday"]';
+        } else if (typeof job.schedule.days === 'string') {
+            // String format: "Monday, Tuesday"
+            scheduleDisplay = job.schedule.days;
+        }
+    }
     
     const content = `
         <div class="space-y-4">
@@ -461,8 +442,8 @@ function showJobDetails(jobId) {
             <div class="border-t pt-4">
                 <h5 class="font-bold mb-2">Schedule</h5>
                 <p class="text-gray-600">
-                    ${job.schedule.days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}<br>
-                    ${job.schedule.times}
+                    ${scheduleDisplay}<br>
+                    ${job.schedule && job.schedule.times ? job.schedule.times : 'Schedule to be determined'}
                 </p>
             </div>
             
@@ -579,174 +560,158 @@ function submitBid() {
     document.getElementById('bidMessage').value = '';
 }
 
-// Enhanced Roster Management with Dates and Multiple Time Slots
-function addRosterEntry() {
-    const container = document.getElementById('rosterEntries');
-    const entryId = Date.now();
+// ========== CALENDAR FUNCTIONS FOR ROSTER ==========
+function initCalendar() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
     
-    const entry = document.createElement('div');
-    entry.className = 'border rounded-lg p-4 mb-4 roster-entry';
-    entry.dataset.id = entryId;
-    entry.innerHTML = `
-        <div class="flex justify-between items-start mb-3">
-            <h4 class="font-semibold">Availability Entry</h4>
-            <button onclick="removeRosterEntry(${entryId})" class="text-red-600 hover:text-red-700 text-sm">Remove</button>
-        </div>
-        <div class="space-y-3">
-            <div>
-                <label class="block text-sm font-medium mb-1">Date</label>
-                <input type="date" class="roster-date w-full px-3 py-2 border rounded-lg" required>
-            </div>
-            <div class="time-slots">
-                <label class="block text-sm font-medium mb-2">Time Slots</label>
-                <div class="time-slot-list space-y-2"></div>
-                <button onclick="addTimeSlot(${entryId})" class="mt-2 text-indigo-600 text-sm font-medium hover:text-indigo-700">
-                    + Add Time Slot
-                </button>
-            </div>
-        </div>
-    `;
+    const monthNames = ["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"];
+    document.getElementById('calendarMonth').textContent = `${monthNames[month]} ${year}`;
     
-    container.appendChild(entry);
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
     
-    // Add first time slot automatically
-    setTimeout(() => addTimeSlot(entryId), 100);
-}
-
-function addTimeSlot(entryId) {
-    const entry = document.querySelector(`[data-id="${entryId}"]`);
-    if (!entry) return;
+    const calendarDays = document.getElementById('calendarDays');
+    calendarDays.innerHTML = '';
     
-    const slotList = entry.querySelector('.time-slot-list');
-    const slotId = Date.now();
+    // Empty cells for days before month starts
+    for (let i = 0; i < firstDay; i++) {
+        const emptyDay = document.createElement('div');
+        emptyDay.className = 'calendar-day disabled';
+        calendarDays.appendChild(emptyDay);
+    }
     
-    const slot = document.createElement('div');
-    slot.className = 'flex gap-2 items-center time-slot';
-    slot.dataset.slotId = slotId;
-    slot.innerHTML = `
-        <input type="time" class="slot-start flex-1 px-3 py-2 border rounded-lg text-sm" required>
-        <span class="text-gray-500">to</span>
-        <input type="time" class="slot-end flex-1 px-3 py-2 border rounded-lg text-sm" required>
-        <button onclick="removeTimeSlot(${entryId}, ${slotId})" class="text-red-600 hover:text-red-700 text-sm">×</button>
-    `;
-    
-    slotList.appendChild(slot);
-}
-
-function removeTimeSlot(entryId, slotId) {
-    const entry = document.querySelector(`[data-id="${entryId}"]`);
-    if (!entry) return;
-    
-    const slot = entry.querySelector(`[data-slot-id="${slotId}"]`);
-    if (slot) {
-        slot.remove();
+    // Days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dayElement = document.createElement('div');
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        
+        dayElement.className = 'calendar-day';
+        dayElement.textContent = day;
+        dayElement.dataset.date = dateStr;
+        
+        // Check if this date has time slots
+        if (currentUser.roster && currentUser.roster.some(r => r.date === dateStr)) {
+            dayElement.classList.add('has-slots');
+        }
+        
+        dayElement.onclick = () => selectDate(dateStr);
+        calendarDays.appendChild(dayElement);
     }
 }
 
-function removeRosterEntry(entryId) {
-    const entry = document.querySelector(`[data-id="${entryId}"]`);
-    if (entry) {
-        entry.remove();
-    }
-}
-
-function saveRoster() {
-    const entries = document.querySelectorAll('.roster-entry');
-    const roster = [];
+function selectDate(dateStr) {
+    selectedDate = dateStr;
     
-    entries.forEach(entry => {
-        const date = entry.querySelector('.roster-date').value;
-        if (!date) return;
-        
-        const timeSlots = [];
-        const slots = entry.querySelectorAll('.time-slot');
-        
-        slots.forEach(slot => {
-            const start = slot.querySelector('.slot-start').value;
-            const end = slot.querySelector('.slot-end').value;
-            
-            if (start && end) {
-                timeSlots.push({ start, end });
-            }
-        });
-        
-        if (timeSlots.length > 0) {
-            roster.push({
-                date,
-                timeSlots
-            });
+    // Update UI
+    document.querySelectorAll('.calendar-day').forEach(day => {
+        day.classList.remove('selected');
+        if (day.dataset.date === dateStr) {
+            day.classList.add('selected');
         }
     });
     
-    if (roster.length === 0) {
-        showToast('Please add at least one availability entry', 'warning');
-        return;
-    }
+    const date = new Date(dateStr);
+    document.getElementById('selectedDateText').textContent = date.toLocaleDateString('en-US', { 
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    });
     
-    currentUser.roster = roster;
-    updateUser();
-    
-    showToast('Roster saved successfully!', 'success');
-    searchJobs();
+    document.getElementById('timeSlotsSection').classList.remove('hidden');
+    loadTimeSlotsForDate(dateStr);
 }
 
-function loadRoster() {
-    const container = document.getElementById('rosterEntries');
-    container.innerHTML = '';
+function loadTimeSlotsForDate(dateStr) {
+    const rosterEntry = currentUser.roster ? currentUser.roster.find(r => r.date === dateStr) : null;
+    const container = document.getElementById('timeSlotsList');
     
-    if (!currentUser.roster || currentUser.roster.length === 0) {
+    if (!rosterEntry || !rosterEntry.timeSlots || rosterEntry.timeSlots.length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500">No time slots added yet</p>';
         return;
     }
     
-    currentUser.roster.forEach(rosterEntry => {
-        const entryId = Date.now() + Math.random();
+    container.innerHTML = rosterEntry.timeSlots.map((slot, index) => `
+        <div class="time-slot-item">
+            <input type="time" value="${slot.start}" onchange="updateTimeSlot(${index}, 'start', this.value)" class="flex-1 px-2 py-1 border rounded text-sm">
+            <span class="text-gray-500">to</span>
+            <input type="time" value="${slot.end}" onchange="updateTimeSlot(${index}, 'end', this.value)" class="flex-1 px-2 py-1 border rounded text-sm">
+            <button onclick="removeTimeSlotFromDate(${index})" class="text-red-600 hover:text-red-700 px-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+    `).join('');
+}
+
+function addTimeSlotToDate() {
+    if (!selectedDate) return;
+    
+    if (!currentUser.roster) currentUser.roster = [];
+    
+    let rosterEntry = currentUser.roster.find(r => r.date === selectedDate);
+    if (!rosterEntry) {
+        rosterEntry = { date: selectedDate, timeSlots: [] };
+        currentUser.roster.push(rosterEntry);
+    }
+    
+    rosterEntry.timeSlots.push({ start: '09:00', end: '17:00' });
+    loadTimeSlotsForDate(selectedDate);
+    updateCalendarDisplay();
+}
+
+function updateTimeSlot(index, field, value) {
+    if (!selectedDate) return;
+    
+    const rosterEntry = currentUser.roster.find(r => r.date === selectedDate);
+    if (rosterEntry && rosterEntry.timeSlots[index]) {
+        rosterEntry.timeSlots[index][field] = value;
+    }
+}
+
+function removeTimeSlotFromDate(index) {
+    if (!selectedDate) return;
+    
+    const rosterEntry = currentUser.roster.find(r => r.date === selectedDate);
+    if (rosterEntry) {
+        rosterEntry.timeSlots.splice(index, 1);
         
-        const entry = document.createElement('div');
-        entry.className = 'border rounded-lg p-4 mb-4 roster-entry';
-        entry.dataset.id = entryId;
-        entry.innerHTML = `
-            <div class="flex justify-between items-start mb-3">
-                <h4 class="font-semibold">Availability Entry</h4>
-                <button onclick="removeRosterEntry(${entryId})" class="text-red-600 hover:text-red-700 text-sm">Remove</button>
-            </div>
-            <div class="space-y-3">
-                <div>
-                    <label class="block text-sm font-medium mb-1">Date</label>
-                    <input type="date" class="roster-date w-full px-3 py-2 border rounded-lg" value="${rosterEntry.date}" required>
-                </div>
-                <div class="time-slots">
-                    <label class="block text-sm font-medium mb-2">Time Slots</label>
-                    <div class="time-slot-list space-y-2"></div>
-                    <button onclick="addTimeSlot(${entryId})" class="mt-2 text-indigo-600 text-sm font-medium hover:text-indigo-700">
-                        + Add Time Slot
-                    </button>
-                </div>
-            </div>
-        `;
+        // Remove entry if no time slots left
+        if (rosterEntry.timeSlots.length === 0) {
+            currentUser.roster = currentUser.roster.filter(r => r.date !== selectedDate);
+        }
         
-        container.appendChild(entry);
-        
-        // Add time slots
-        setTimeout(() => {
-            const slotList = entry.querySelector('.time-slot-list');
-            rosterEntry.timeSlots.forEach(timeSlot => {
-                const slotId = Date.now() + Math.random();
-                const slot = document.createElement('div');
-                slot.className = 'flex gap-2 items-center time-slot';
-                slot.dataset.slotId = slotId;
-                slot.innerHTML = `
-                    <input type="time" class="slot-start flex-1 px-3 py-2 border rounded-lg text-sm" value="${timeSlot.start}" required>
-                    <span class="text-gray-500">to</span>
-                    <input type="time" class="slot-end flex-1 px-3 py-2 border rounded-lg text-sm" value="${timeSlot.end}" required>
-                    <button onclick="removeTimeSlot(${entryId}, ${slotId})" class="text-red-600 hover:text-red-700 text-sm">×</button>
-                `;
-                slotList.appendChild(slot);
-            });
-        }, 100);
+        loadTimeSlotsForDate(selectedDate);
+        updateCalendarDisplay();
+    }
+}
+
+function updateCalendarDisplay() {
+    document.querySelectorAll('.calendar-day').forEach(day => {
+        const dateStr = day.dataset.date;
+        if (dateStr) {
+            day.classList.remove('has-slots');
+            if (currentUser.roster && currentUser.roster.some(r => r.date === dateStr)) {
+                day.classList.add('has-slots');
+            }
+        }
     });
 }
 
-// Profile Photo Upload
+function saveRoster() {
+    updateUser();
+    showToast('Availability saved successfully!', 'success');
+}
+
+function loadRoster() {
+    // Roster is now loaded via calendar, no need for separate load function
+    if (document.getElementById('calendarDays')) {
+        initCalendar();
+    }
+}
+
+// ========== PROFILE PHOTO UPLOAD ==========
 function uploadPhoto(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -764,12 +729,6 @@ function uploadPhoto(event) {
     }
     
     const reader = new FileReader();
-    reader.onload = function(e) {
-        currentUser.profilePhoto = e.target.result;
-        updateUser();
-        loadProfilePhoto();
-        showToast('Profile photo updated!', 'success');
-    };
     reader.readAsDataURL(file);
 }
 
@@ -787,7 +746,7 @@ function loadProfilePhoto() {
     }
 }
 
-// Resume Upload
+// ========== RESUME UPLOAD WITH AI SUMMARY ==========
 function uploadResume(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -805,19 +764,45 @@ function uploadResume(event) {
         return;
     }
     
+    showToast('Analyzing resume...', 'info');
+    
     const reader = new FileReader();
     reader.onload = function(e) {
+        // Generate mock AI summary
+        const mockSummary = generateMockResumeSummary();
+        
         currentUser.resume = {
             name: file.name,
             type: file.type,
             data: e.target.result,
-            uploadedAt: new Date().toISOString()
+            uploadedAt: new Date().toISOString(),
+            summary: mockSummary
         };
         updateUser();
         loadResume();
-        showToast('Resume uploaded successfully!', 'success');
+        showToast('Resume uploaded and analyzed!', 'success');
     };
     reader.readAsDataURL(file);
+}
+
+function generateMockResumeSummary() {
+    const skills = ['Customer Service', 'Sales', 'Team Leadership', 'Problem Solving', 'Communication', 'Time Management'];
+    const experience = Math.floor(Math.random() * 8) + 2;
+    const education = ['Bachelor\'s Degree', 'Diploma', 'Certificate'][Math.floor(Math.random() * 3)];
+    
+    return {
+        name: currentUser.name,
+        experience: `${experience} years`,
+        education: education,
+        topSkills: skills.sort(() => 0.5 - Math.random()).slice(0, 3),
+        keyHighlights: [
+            `${experience}+ years of experience in customer-facing roles`,
+            'Proven track record of exceeding performance targets',
+            'Strong communication and interpersonal skills',
+            'Experience with team management and training'
+        ],
+        suggestedRoles: ['Customer Service Representative', 'Sales Associate', 'Team Lead', 'Retail Manager']
+    };
 }
 
 function loadResume() {
@@ -829,6 +814,7 @@ function loadResume() {
     }
     
     const uploadDate = new Date(currentUser.resume.uploadedAt).toLocaleDateString();
+    const summary = currentUser.resume.summary;
     
     container.innerHTML = `
         <div class="border rounded-lg p-4 mb-4">
@@ -852,6 +838,49 @@ function loadResume() {
                 </div>
             </div>
         </div>
+        
+        ${summary ? `
+        <div class="resume-summary">
+            <h4 class="font-bold text-lg mb-3 flex items-center gap-2">
+                <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                </svg>
+                AI Resume Analysis
+            </h4>
+            
+            <div class="grid md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <p class="text-sm text-gray-600 mb-1">Experience</p>
+                    <p class="font-semibold">${summary.experience}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600 mb-1">Education</p>
+                    <p class="font-semibold">${summary.education}</p>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <p class="text-sm text-gray-600 mb-2">Top Skills</p>
+                <div class="flex flex-wrap gap-2">
+                    ${summary.topSkills.map(skill => `<span class="badge badge-primary">${skill}</span>`).join('')}
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <p class="text-sm text-gray-600 mb-2">Key Highlights</p>
+                <ul class="list-disc list-inside space-y-1 text-sm">
+                    ${summary.keyHighlights.map(h => `<li>${h}</li>`).join('')}
+                </ul>
+            </div>
+            
+            <div>
+                <p class="text-sm text-gray-600 mb-2">Suggested Roles</p>
+                <div class="flex flex-wrap gap-2">
+                    ${summary.suggestedRoles.map(role => `<span class="badge badge-success">${role}</span>`).join('')}
+                </div>
+            </div>
+        </div>
+        ` : ''}
     `;
 }
 
@@ -871,6 +900,327 @@ function deleteResume() {
         loadResume();
         showToast('Resume deleted', 'success');
     }
+}
+
+// ========== GENERAL CERTIFICATES ==========
+function uploadCertificate(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('Certificate size should be less than 10MB', 'error');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        if (!currentUser.certificates) currentUser.certificates = [];
+        
+        currentUser.certificates.push({
+            id: Date.now(),
+            name: file.name,
+            type: file.type,
+            data: e.target.result,
+            uploadedAt: new Date().toISOString()
+        });
+        
+        updateUser();
+        loadCertificates();
+        showToast('Certificate uploaded!', 'success');
+    };
+    reader.readAsDataURL(file);
+}
+
+function loadCertificates() {
+    const container = document.getElementById('certificatesList');
+    
+    if (!currentUser.certificates || currentUser.certificates.length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500">No certificates uploaded yet</p>';
+        return;
+    }
+    
+    container.innerHTML = currentUser.certificates.map(cert => `
+        <div class="cert-card">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z"/>
+                        <path d="M3 8a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+                    </svg>
+                    <div>
+                        <p class="font-semibold text-sm">${cert.name}</p>
+                        <p class="text-xs text-gray-500">${new Date(cert.uploadedAt).toLocaleDateString()}</p>
+                    </div>
+                </div>
+                <button onclick="deleteCertificate(${cert.id})" class="text-red-600 hover:text-red-700 text-sm">
+                    Remove
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function deleteCertificate(id) {
+    if (confirm('Delete this certificate?')) {
+        currentUser.certificates = currentUser.certificates.filter(c => c.id !== id);
+        updateUser();
+        loadCertificates();
+        showToast('Certificate deleted', 'success');
+    }
+}
+
+// ========== SKILLS WITH CERTIFICATES ==========
+function addSkillFromSelect() {
+    const select = document.getElementById('skillSelect');
+    const skill = select.value;
+    
+    if (!skill) {
+        showToast('Please select a skill', 'warning');
+        return;
+    }
+    
+    if (!currentUser.skills) currentUser.skills = [];
+    if (!currentUser.skillCertificates) currentUser.skillCertificates = {};
+    
+    if (!currentUser.skills.includes(skill)) {
+        currentUser.skills.push(skill);
+        updateUser();
+        loadSkills();
+        select.value = '';
+        showToast('Skill added!', 'success');
+        searchJobs();
+    } else {
+        showToast('Skill already added', 'warning');
+    }
+}
+
+function addCustomSkill() {
+    const skill = document.getElementById('customSkill').value.trim().toLowerCase();
+    if (!skill) return;
+    
+    if (!currentUser.skills) currentUser.skills = [];
+    if (!currentUser.skillCertificates) currentUser.skillCertificates = {};
+    
+    if (!currentUser.skills.includes(skill)) {
+        currentUser.skills.push(skill);
+        updateUser();
+        loadSkills();
+        document.getElementById('customSkill').value = '';
+        showToast('Custom skill added!', 'success');
+        searchJobs();
+    } else {
+        showToast('Skill already added', 'warning');
+    }
+}
+
+function removeSkill(skill) {
+    currentUser.skills = currentUser.skills.filter(s => s !== skill);
+    if (currentUser.skillCertificates) {
+        delete currentUser.skillCertificates[skill];
+    }
+    updateUser();
+    loadSkills();
+    showToast('Skill removed', 'success');
+    searchJobs();
+}
+
+function loadSkills() {
+    const container = document.getElementById('skillsList');
+    if (!currentUser.skills || currentUser.skills.length === 0) {
+        container.innerHTML = '<p class="text-gray-500">No skills added yet. Add skills to see matching jobs!</p>';
+        return;
+    }
+    
+    container.innerHTML = currentUser.skills.map(skill => {
+        const hasCert = currentUser.skillCertificates && currentUser.skillCertificates[skill];
+        
+        return `
+            <div class="border rounded-lg p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-semibold capitalize">${skill}</span>
+                    <button onclick="removeSkill('${skill}')" class="text-red-600 hover:text-red-700 text-sm">
+                        Remove
+                    </button>
+                </div>
+                ${hasCert ? `
+                    <div class="flex items-center gap-2 text-sm text-green-600 mb-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                        </svg>
+                        <span>Certificate uploaded</span>
+                    </div>
+                    <button onclick="viewSkillCertificate('${skill}')" class="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+                        View Certificate
+                    </button>
+                ` : `
+                    <button onclick="showSkillCertModal('${skill}')" class="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+                        + Upload Certificate
+                    </button>
+                `}
+            </div>
+        `;
+    }).join('');
+}
+
+function showSkillCertModal(skill) {
+    currentSkillForCert = skill;
+    document.getElementById('certSkillName').textContent = skill;
+    document.getElementById('skillCertModal').classList.remove('hidden');
+    document.getElementById('skillCertModal').classList.add('flex');
+}
+
+function closeSkillCertModal() {
+    currentSkillForCert = null;
+    document.getElementById('skillCertModal').classList.add('hidden');
+    document.getElementById('skillCertModal').classList.remove('flex');
+    document.getElementById('skillCertFile').value = '';
+}
+
+function uploadSkillCertificate() {
+    const fileInput = document.getElementById('skillCertFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showToast('Please select a file', 'warning');
+        return;
+    }
+    
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('File size should be less than 10MB', 'error');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        if (!currentUser.skillCertificates) currentUser.skillCertificates = {};
+        
+        currentUser.skillCertificates[currentSkillForCert] = {
+            name: file.name,
+            type: file.type,
+            data: e.target.result,
+            uploadedAt: new Date().toISOString()
+        };
+        
+        updateUser();
+        loadSkills();
+        closeSkillCertModal();
+        showToast('Certificate uploaded!', 'success');
+    };
+    reader.readAsDataURL(file);
+}
+
+function viewSkillCertificate(skill) {
+    if (currentUser.skillCertificates && currentUser.skillCertificates[skill]) {
+        const cert = currentUser.skillCertificates[skill];
+        const link = document.createElement('a');
+        link.href = cert.data;
+        link.download = cert.name;
+        link.click();
+    }
+}
+
+// ========== PORTFOLIO WITH VIDEO ==========
+function showAddPortfolio() {
+    document.getElementById('portfolioTitle').value = '';
+    document.getElementById('portfolioDesc').value = '';
+    document.getElementById('portfolioDuration').value = '';
+    document.getElementById('portfolioVideo').value = '';
+    document.getElementById('portfolioModal').classList.remove('hidden');
+    document.getElementById('portfolioModal').classList.add('flex');
+}
+
+function closePortfolioModal() {
+    document.getElementById('portfolioModal').classList.add('hidden');
+    document.getElementById('portfolioModal').classList.remove('flex');
+}
+
+function savePortfolio() {
+    const title = document.getElementById('portfolioTitle').value.trim();
+    const desc = document.getElementById('portfolioDesc').value.trim();
+    const duration = document.getElementById('portfolioDuration').value.trim();
+    const videoFile = document.getElementById('portfolioVideo').files[0];
+    
+    if (!title || !desc) {
+        showToast('Please fill in all required fields', 'warning');
+        return;
+    }
+    
+    if (videoFile && videoFile.size > 50 * 1024 * 1024) {
+        showToast('Video size should be less than 50MB', 'error');
+        return;
+    }
+    
+    if (!currentUser.portfolio) currentUser.portfolio = [];
+    
+    if (videoFile) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            currentUser.portfolio.push({
+                id: Date.now(),
+                title,
+                description: desc,
+                duration,
+                video: {
+                    name: videoFile.name,
+                    type: videoFile.type,
+                    data: e.target.result
+                }
+            });
+            
+            updateUser();
+            loadPortfolio();
+            closePortfolioModal();
+            showToast('Portfolio item added!', 'success');
+        };
+        reader.readAsDataURL(videoFile);
+    } else {
+        currentUser.portfolio.push({
+            id: Date.now(),
+            title,
+            description: desc,
+            duration
+        });
+        
+        updateUser();
+        loadPortfolio();
+        closePortfolioModal();
+        showToast('Portfolio item added!', 'success');
+    }
+}
+
+function loadPortfolio() {
+    const container = document.getElementById('portfolioList');
+    if (!currentUser.portfolio || currentUser.portfolio.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm">No portfolio items yet</p>';
+        return;
+    }
+    
+    container.innerHTML = currentUser.portfolio.map(item => `
+        <div class="border rounded-lg p-4">
+            <div class="flex justify-between items-start mb-2">
+                <h4 class="font-bold">${item.title}</h4>
+                <button onclick="removePortfolio(${item.id})" class="text-red-600 hover:text-red-700 text-sm">Remove</button>
+            </div>
+            <p class="text-sm text-gray-600 mb-2">${item.description}</p>
+            ${item.duration ? `<p class="text-xs text-gray-500 mb-2">${item.duration}</p>` : ''}
+            ${item.video ? `
+                <div class="mt-2">
+                    <video controls class="video-preview">
+                        <source src="${item.video.data}" type="${item.video.type}">
+                        Your browser does not support the video tag.
+                    </video>
+                    <p class="text-xs text-gray-500 mt-1">${item.video.name}</p>
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+}
+
+function removePortfolio(id) {
+    currentUser.portfolio = currentUser.portfolio.filter(p => p.id !== id);
+    updateUser();
+    loadPortfolio();
+    showToast('Portfolio item removed', 'success');
 }
 
 // Profile management
@@ -937,136 +1287,6 @@ function generateStars(rating) {
         }
     }
     return stars;
-}
-
-// Skills management
-function addSkillFromSelect() {
-    const select = document.getElementById('skillSelect');
-    const skill = select.value;
-    
-    if (!skill) {
-        showToast('Please select a skill', 'warning');
-        return;
-    }
-    
-    if (!currentUser.skills) currentUser.skills = [];
-    
-    if (!currentUser.skills.includes(skill)) {
-        currentUser.skills.push(skill);
-        updateUser();
-        loadSkills();
-        select.value = '';
-        showToast('Skill added!', 'success');
-        searchJobs();
-    } else {
-        showToast('Skill already added', 'warning');
-    }
-}
-
-function addCustomSkill() {
-    const skill = document.getElementById('customSkill').value.trim().toLowerCase();
-    if (!skill) return;
-    
-    if (!currentUser.skills) currentUser.skills = [];
-    
-    if (!currentUser.skills.includes(skill)) {
-        currentUser.skills.push(skill);
-        updateUser();
-        loadSkills();
-        document.getElementById('customSkill').value = '';
-        showToast('Custom skill added!', 'success');
-        searchJobs();
-    } else {
-        showToast('Skill already added', 'warning');
-    }
-}
-
-function removeSkill(skill) {
-    currentUser.skills = currentUser.skills.filter(s => s !== skill);
-    updateUser();
-    loadSkills();
-    showToast('Skill removed', 'success');
-    searchJobs();
-}
-
-function loadSkills() {
-    const container = document.getElementById('skillsList');
-    if (!currentUser.skills || currentUser.skills.length === 0) {
-        container.innerHTML = '<p class="text-gray-500">No skills added yet. Add skills to see matching jobs!</p>';
-        return;
-    }
-    
-    container.innerHTML = currentUser.skills.map(skill => `
-        <span class="badge badge-primary inline-flex items-center gap-2">
-            ${skill}
-            <button onclick="removeSkill('${skill}')" class="text-xs hover:text-red-600 ml-1">×</button>
-        </span>
-    `).join('');
-}
-
-// Portfolio management
-function showAddPortfolio() {
-    document.getElementById('portfolioTitle').value = '';
-    document.getElementById('portfolioDesc').value = '';
-    document.getElementById('portfolioDuration').value = '';
-    document.getElementById('portfolioModal').classList.remove('hidden');
-    document.getElementById('portfolioModal').classList.add('flex');
-}
-
-function closePortfolioModal() {
-    document.getElementById('portfolioModal').classList.add('hidden');
-    document.getElementById('portfolioModal').classList.remove('flex');
-}
-
-function savePortfolio() {
-    const title = document.getElementById('portfolioTitle').value.trim();
-    const desc = document.getElementById('portfolioDesc').value.trim();
-    const duration = document.getElementById('portfolioDuration').value.trim();
-    
-    if (!title || !desc) {
-        showToast('Please fill in all required fields', 'warning');
-        return;
-    }
-    
-    if (!currentUser.portfolio) currentUser.portfolio = [];
-    
-    currentUser.portfolio.push({
-        id: Date.now(),
-        title,
-        description: desc,
-        duration
-    });
-    
-    updateUser();
-    loadPortfolio();
-    closePortfolioModal();
-    showToast('Portfolio item added!', 'success');
-}
-
-function loadPortfolio() {
-    const container = document.getElementById('portfolioList');
-    if (!currentUser.portfolio || currentUser.portfolio.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 text-sm">No portfolio items yet</p>';
-        return;
-    }
-    
-    container.innerHTML = currentUser.portfolio.map(item => `
-        <div class="border rounded-lg p-4">
-            <div class="flex justify-between items-start mb-2">
-                <h4 class="font-bold">${item.title}</h4>
-                <button onclick="removePortfolio(${item.id})" class="text-red-600 hover:text-red-700 text-sm">Remove</button>
-            </div>
-            <p class="text-sm text-gray-600 mb-2">${item.description}</p>
-            ${item.duration ? `<p class="text-xs text-gray-500">${item.duration}</p>` : ''}
-        </div>
-    `).join('');
-}
-
-function removePortfolio(id) {
-    currentUser.portfolio = currentUser.portfolio.filter(p => p.id !== id);
-    updateUser();
-    loadPortfolio();
-    showToast('Portfolio item removed', 'success');
 }
 
 function updateUser() {
@@ -1150,7 +1370,11 @@ function clockOut(contractId) {
 }
 
 // Toast notification
-function showToast(message, type = 'info') {
+
+
+
+
+    function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `fixed bottom-24 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${
         type === 'success' ? 'bg-green-500' : 
