@@ -231,6 +231,7 @@ function loadJobsOnMap() {
                     <div style="min-width: 150px;">
                         <h4 style="margin: 0 0 8px 0; font-weight: bold;">${job.title}</h4>
                         <p style="margin: 4px 0; font-size: 13px;">${job.company}</p>
+                        <p style="margin: 4px 0; font-size: 12px; color: #10b981;">${job.headcount || 1} position(s) available</p>
                         <p style="margin: 4px 0; font-size: 12px; color: #666;">${distance.toFixed(1)} km away</p>
                         <button onclick="showJobDetails(${job.id})" style="margin-top: 8px; background: #6366f1; color: white; padding: 4px 12px; border: none; border-radius: 4px; cursor: pointer; width: 100%;">View Details</button>
                     </div>
@@ -381,6 +382,12 @@ function displayJobs(jobs) {
                     <span data-price="${job.salary}">${formatCurrency(job.salary)}</span>
                     ${job.type === 'part-time' ? '/hour' : '/month'}
                 </div>
+                <div class="flex items-center text-gray-600 text-sm mb-3">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                    <span>${job.headcount || 1} ${(job.headcount || 1) > 1 ? 'positions' : 'position'} available</span>
+                </div>
                 <div class="flex flex-wrap gap-2">
                     ${job.skills.map(skill => {
                         const isMatched = currentUser.skills.includes(skill);
@@ -431,6 +438,13 @@ function showJobDetails(jobId) {
                 <h5 class="font-bold mb-2">Salary</h5>
                 <p class="text-xl text-indigo-600" data-price="${job.salary}">
                     ${formatCurrency(job.salary)} ${job.type === 'part-time' ? '/hour' : '/month'}
+                </p>
+            </div>
+
+            <div class="border-t pt-4">
+                <h5 class="font-bold mb-2">Positions Available</h5>
+                <p class="text-gray-600">
+                    ${job.headcount || 1} ${(job.headcount || 1) > 1 ? 'positions' : 'position'} needed
                 </p>
             </div>
             
